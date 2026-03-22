@@ -414,7 +414,8 @@ const PROTOTYPES = [
     name: 'Ornament Fling',
     icon: '🎯',
     desc: 'Drag and fling ornaments at tree zones to reveal them. Find the pickle in fewest flings.',
-    available: false,
+    available: true,
+    create: (canvas, seed) => new OrnamentFlingGame(canvas, seed),
   },
 ];
 
@@ -547,6 +548,13 @@ function startGame(proto) {
       t: Date.now(),
     };
   });
+  newCanvas.addEventListener('pointermove', (e) => {
+    if (!tapStart || !currentGame?.handleDrag) return;
+    const rect = newCanvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (newCanvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (newCanvas.height / rect.height);
+    currentGame.handleDrag(x, y, tapStart.x, tapStart.y);
+  });
   newCanvas.addEventListener('pointerup', (e) => {
     e.preventDefault();
     if (!tapStart) return;
@@ -555,12 +563,18 @@ function startGame(proto) {
     const y = (e.clientY - rect.top) * (newCanvas.height / rect.height);
     const dx = x - tapStart.x;
     const dy = y - tapStart.y;
-    if (Math.sqrt(dx * dx + dy * dy) < 12 && Date.now() - tapStart.t < 500) {
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (currentGame?.handleDragEnd) {
+      currentGame.handleDragEnd(x, y, tapStart.x, tapStart.y);
+    } else if (dist < 12 && Date.now() - tapStart.t < 500) {
       currentGame.handleTap(x, y);
     }
     tapStart = null;
   });
-  newCanvas.addEventListener('pointercancel', () => { tapStart = null; });
+  newCanvas.addEventListener('pointercancel', () => {
+    if (currentGame?.handleDragCancel) currentGame.handleDragCancel();
+    tapStart = null;
+  });
 
   // Keyboard arrow keys (desktop)
   if (keyHandler) window.removeEventListener('keydown', keyHandler);
@@ -1894,6 +1908,481 @@ class BranchPusherGame {
 
     bar.appendChild(row1);
     bar.appendChild(row2);
+  }
+}
+
+// ============================================================
+// ORNAMENT FLING
+// ============================================================
+
+class OrnamentFlingGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.rng = makePRNG(seed ^ 0x4AC0DE77);
+    this.won = false;
+    this.moves = 0;
+    this.totalCells = 10;
+
+    // Build 10 zones: 1 tip + 3 rows of 3 (tree shape)
+    // Each zone: { row, col, label, state:'hidden'|'revealed', item:'empty'|'pickle' }
+    this.zones = [];
+    // Row 0: 1 zone (tip)
+    this.zones.push({ row: 0, col: 0, label: 'Tip' });
+    // Row 1: 2 zones
+    this.zones.push({ row: 1, col: 0, label: 'Left branch' });
+    this.zones.push({ row: 1, col: 1, label: 'Right branch' });
+    // Row 2: 3 zones
+    this.zones.push({ row: 2, col: 0, label: 'Upper left' });
+    this.zones.push({ row: 2, col: 1, label: 'Upper middle' });
+    this.zones.push({ row: 2, col: 2, label: 'Upper right' });
+    // Row 3: 4 zones
+    this.zones.push({ row: 3, col: 0, label: 'Lower left' });
+    this.zones.push({ row: 3, col: 1, label: 'Lower mid-left' });
+    this.zones.push({ row: 3, col: 2, label: 'Lower mid-right' });
+    this.zones.push({ row: 3, col: 3, label: 'Lower right' });
+
+    // Assign states
+    for (const z of this.zones) z.state = 'hidden';
+
+    // Pick one pickle zone
+    const pickleIdx = Math.floor(this.rng() * this.zones.length);
+    this.zones[pickleIdx].item = 'pickle';
+    for (let i = 0; i < this.zones.length; i++) {
+      if (i !== pickleIdx) this.zones[i].item = 'empty';
+    }
+
+    // Drag state
+    this.dragActive = false;
+    this.dragX = 0;
+    this.dragY = 0;
+    this.startX = 0;
+    this.startY = 0;
+    this.aimedZone = -1;
+
+    // Animation state
+    this.animating = false;
+    this.animZone = -1;
+    this.animT = 0;
+    this.animDuration = 550;
+    this.animStart = 0;
+
+    // Computed layout (set in resize)
+    this.layout = null;
+    this.slingshotX = 0;
+    this.slingshotY = 0;
+  }
+
+  resize(w, h) {
+    this._computeLayout(w, h);
+    this.render();
+  }
+
+  _computeLayout(w, h) {
+    // Zone rects arranged as tree rows: 1, 2, 3, 4 (wider at bottom)
+    // Tree occupies top 70% of canvas; slingshot at bottom 20%
+    const treeTop = h * 0.04;
+    const treeBottom = h * 0.72;
+    const treeH = treeBottom - treeTop;
+    const rows = [1, 2, 3, 4];
+    const rowH = treeH / rows.length;
+    const zoneH = rowH * 0.78;
+    const maxW = w * 0.84;
+
+    this.zoneRects = [];
+    let zi = 0;
+    for (let r = 0; r < rows.length; r++) {
+      const count = rows[r];
+      // Width of tree row shrinks toward top
+      const fraction = (r + 1) / rows.length; // 0.25 → 1.0
+      const rowW = maxW * fraction;
+      const zoneW = Math.min((rowW / count) * 0.84, 120);
+      const totalUsed = count * zoneW + (count - 1) * (zoneW * 0.2);
+      const rowStartX = w / 2 - totalUsed / 2;
+      const rowY = treeTop + r * rowH + (rowH - zoneH) / 2;
+
+      for (let c = 0; c < count; c++) {
+        const gap = count > 1 ? (totalUsed - count * zoneW) / (count - 1) : 0;
+        const zx = rowStartX + c * (zoneW + gap);
+        this.zoneRects.push({ x: zx, y: rowY, w: zoneW, h: zoneH });
+        zi++;
+      }
+    }
+
+    // Slingshot at bottom center
+    this.slingshotX = w / 2;
+    this.slingshotY = h * 0.87;
+    this.forkH = Math.min(h * 0.08, 44);
+    this.armSpread = this.forkH * 0.7;
+  }
+
+  render() {
+    const canvas = this.canvas;
+    const ctx = this.ctx;
+    const w = canvas.width;
+    const h = canvas.height;
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Background gradient
+    const bg = ctx.createLinearGradient(0, 0, 0, h);
+    bg.addColorStop(0, '#0a1a0a');
+    bg.addColorStop(1, '#1a0a00');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    // Draw tree silhouette behind zones (triangle)
+    const treeTip = { x: w / 2, y: this.zoneRects[0].y - 6 };
+    const treeBottomY = this.zoneRects[this.zoneRects.length - 1].y + this.zoneRects[this.zoneRects.length - 1].h + 10;
+    const treeLeftX = this.zoneRects[6].x - 10;
+    const treeRightX = this.zoneRects[9].x + this.zoneRects[9].w + 10;
+    ctx.beginPath();
+    ctx.moveTo(treeTip.x, treeTip.y);
+    ctx.lineTo(treeRightX, treeBottomY);
+    ctx.lineTo(treeLeftX, treeBottomY);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(20,60,20,0.45)';
+    ctx.fill();
+
+    // Draw trunk
+    const trunkW = 14;
+    const trunkH = this.slingshotY - treeBottomY - this.forkH - 8;
+    if (trunkH > 0) {
+      ctx.fillStyle = '#5a3010';
+      ctx.fillRect(w / 2 - trunkW / 2, treeBottomY, trunkW, trunkH);
+    }
+
+    // Draw zones
+    for (let i = 0; i < this.zones.length; i++) {
+      this._drawZone(ctx, i);
+    }
+
+    // Draw aim arc if dragging
+    if (this.dragActive && this.aimedZone >= 0) {
+      this._drawAimArc(ctx);
+    }
+
+    // Draw slingshot
+    this._drawSlingshot(ctx);
+
+    // Draw fling animation
+    if (this.animating) {
+      this._drawFlingBall(ctx);
+    }
+
+    // Win overlay
+    if (this.won) {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, 0, w, h);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.font = `bold ${Math.round(h * 0.07)}px sans-serif`;
+      ctx.fillText('🥒 You found the pickle!', w / 2, h * 0.46);
+      ctx.font = `${Math.round(h * 0.04)}px sans-serif`;
+      ctx.fillText(`Flings used: ${this.moves}`, w / 2, h * 0.55);
+    }
+  }
+
+  _drawZone(ctx, i) {
+    const z = this.zones[i];
+    const r = this.zoneRects[i];
+    const aimed = !this.animating && this.aimedZone === i && this.dragActive;
+
+    // Background
+    if (z.state === 'hidden') {
+      ctx.fillStyle = aimed ? '#5a4a00' : '#1a2a1a';
+      roundRect(ctx, r.x, r.y, r.w, r.h, 8);
+      ctx.fill();
+
+      // Border
+      ctx.strokeStyle = aimed ? '#f0c040' : '#2a4a2a';
+      ctx.lineWidth = aimed ? 2.5 : 1.5;
+      roundRect(ctx, r.x, r.y, r.w, r.h, 8);
+      ctx.stroke();
+
+      // Question mark
+      ctx.fillStyle = aimed ? '#f0c040' : 'rgba(255,255,255,0.2)';
+      ctx.font = `bold ${Math.round(r.h * 0.55)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('?', r.x + r.w / 2, r.y + r.h / 2);
+
+      if (aimed) {
+        // Target crosshair ring
+        ctx.strokeStyle = '#f0c040';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(r.x + r.w / 2, r.y + r.h / 2, r.h * 0.42, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    } else {
+      // Revealed
+      const isPickle = z.item === 'pickle';
+      ctx.fillStyle = isPickle ? '#1a3a0a' : '#0d1a0d';
+      roundRect(ctx, r.x, r.y, r.w, r.h, 8);
+      ctx.fill();
+      ctx.strokeStyle = isPickle ? '#6ac040' : '#3a5a3a';
+      ctx.lineWidth = isPickle ? 2.5 : 1.5;
+      roundRect(ctx, r.x, r.y, r.w, r.h, 8);
+      ctx.stroke();
+
+      const emoji = isPickle ? '🥒' : '🌿';
+      ctx.font = `${Math.round(r.h * 0.55)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(emoji, r.x + r.w / 2, r.y + r.h / 2);
+    }
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  _drawAimArc(ctx) {
+    const tx = this.slingshotX;
+    const ty = this.slingshotY - this.forkH;
+    const r = this.zoneRects[this.aimedZone];
+    const ex = r.x + r.w / 2;
+    const ey = r.y + r.h / 2;
+    // Quadratic bezier control point: up and toward target
+    const cx = (tx + ex) / 2;
+    const cy = Math.min(ty, ey) - Math.abs(ex - tx) * 0.3 - 30;
+
+    ctx.save();
+    ctx.setLineDash([8, 8]);
+    ctx.strokeStyle = 'rgba(240, 192, 64, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.quadraticCurveTo(cx, cy, ex, ey);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  _drawSlingshot(ctx) {
+    const sx = this.slingshotX;
+    const sy = this.slingshotY;
+    const fh = this.forkH;
+    const spread = this.armSpread;
+
+    // Handle (stick)
+    ctx.strokeStyle = '#7a4a10';
+    ctx.lineWidth = 7;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(sx, sy);
+    ctx.lineTo(sx, sy - fh * 0.5);
+    ctx.stroke();
+
+    // Y-fork arms
+    ctx.strokeStyle = '#8a5a18';
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - fh * 0.5);
+    ctx.lineTo(sx - spread, sy - fh);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - fh * 0.5);
+    ctx.lineTo(sx + spread, sy - fh);
+    ctx.stroke();
+
+    // Fork tips (dots)
+    ctx.fillStyle = '#5a3008';
+    ctx.beginPath();
+    ctx.arc(sx - spread, sy - fh, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(sx + spread, sy - fh, 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (!this.animating) {
+      if (this.dragActive && this.aimedZone >= 0) {
+        // Elastic bands stretched toward aimed zone (pull-back effect)
+        const bx = sx;
+        const by = sy - fh * 0.85;
+        ctx.strokeStyle = 'rgba(200, 150, 80, 0.85)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(sx - spread, sy - fh);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + spread, sy - fh);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+        // Loaded ornament
+        ctx.font = `${Math.round(fh * 0.65)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🔴', bx, by);
+        ctx.textBaseline = 'alphabetic';
+      } else {
+        // Resting elastic bands
+        const bx = sx;
+        const by = sy - fh * 0.72;
+        ctx.strokeStyle = 'rgba(200, 150, 80, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sx - spread, sy - fh);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx + spread, sy - fh);
+        ctx.lineTo(bx, by);
+        ctx.stroke();
+        // Resting ornament
+        ctx.font = `${Math.round(fh * 0.65)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🔴', bx, by);
+        ctx.textBaseline = 'alphabetic';
+      }
+    }
+  }
+
+  _drawFlingBall(ctx) {
+    const now = Date.now();
+    const t = Math.min((now - this.animStart) / this.animDuration, 1);
+    // Ease-out cubic
+    const ease = 1 - Math.pow(1 - t, 3);
+
+    const sx = this.slingshotX;
+    const sy = this.slingshotY - this.forkH * 0.85;
+    const r = this.zoneRects[this.animZone];
+    const ex = r.x + r.w / 2;
+    const ey = r.y + r.h / 2;
+    const cx = (sx + ex) / 2;
+    const cy = Math.min(sy, ey) - Math.abs(ex - sx) * 0.3 - 30;
+
+    // Quadratic bezier position
+    const bx = (1 - ease) * (1 - ease) * sx + 2 * (1 - ease) * ease * cx + ease * ease * ex;
+    const by = (1 - ease) * (1 - ease) * sy + 2 * (1 - ease) * ease * cy + ease * ease * ey;
+
+    ctx.font = `${Math.round(this.forkH * 0.65)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔴', bx, by);
+    ctx.textBaseline = 'alphabetic';
+
+    if (t < 1) {
+      requestAnimationFrame(() => { this.render(); });
+    } else {
+      this.animating = false;
+      this.zones[this.animZone].state = 'revealed';
+      this.render();
+      if (this.zones[this.animZone].item === 'pickle') {
+        this.won = true;
+        this.render();
+        setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 300);
+      } else {
+        if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+      }
+    }
+  }
+
+  _findZoneAt(px, py) {
+    for (let i = 0; i < this.zoneRects.length; i++) {
+      const r = this.zoneRects[i];
+      if (px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h) return i;
+    }
+    return -1;
+  }
+
+  _findNearestHiddenZone(px, py) {
+    // Find the hidden zone closest to the given point (used for drag aim)
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < this.zones.length; i++) {
+      if (this.zones[i].state !== 'hidden') continue;
+      const r = this.zoneRects[i];
+      const cx = r.x + r.w / 2;
+      const cy = r.y + r.h / 2;
+      const d = Math.hypot(cx - px, cy - py);
+      if (d < bestDist) { bestDist = d; best = i; }
+    }
+    return best;
+  }
+
+  _flingAt(zoneIdx) {
+    if (this.animating || this.won) return;
+    if (this.zones[zoneIdx].state === 'revealed') return;
+    this.moves++;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+    this.aimedZone = -1;
+    this.dragActive = false;
+    this.animating = true;
+    this.animZone = zoneIdx;
+    this.animStart = Date.now();
+    this.render();
+    requestAnimationFrame(() => { this.render(); });
+  }
+
+  handleDrag(px, py, startX, startY) {
+    if (this.won || this.animating) return;
+    this.dragActive = true;
+    this.dragX = px;
+    this.dragY = py;
+
+    // The drag direction is FROM start TO current (pull-back),
+    // so fling direction is inverted: aim at zone in the pull-back direction projected upward
+    // Simpler: just aim at whichever hidden zone is nearest to where the user is pointing
+    // (upper portion of screen = zones)
+    const dx = px - startX;
+    const dy = py - startY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < 8) {
+      this.aimedZone = -1;
+    } else {
+      // Project a ray in the fling direction (opposite of drag) and pick nearest zone
+      const flingAngle = Math.atan2(-dy, -dx);
+      const rayLen = this.canvas.height;
+      const rayX = startX + Math.cos(flingAngle) * rayLen;
+      const rayY = startY + Math.sin(flingAngle) * rayLen;
+      // Find hidden zone nearest to the ray endpoint (clamped to canvas)
+      const targetX = Math.max(0, Math.min(this.canvas.width, rayX));
+      const targetY = Math.max(0, Math.min(this.canvas.height, rayY));
+      this.aimedZone = this._findNearestHiddenZone(targetX, targetY);
+    }
+
+    this.render();
+  }
+
+  handleDragEnd(px, py, startX, startY) {
+    if (this.won || this.animating) return;
+    const dx = px - startX;
+    const dy = py - startY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist < 12) {
+      // Treat as a tap: tap directly on a hidden zone to fling at it
+      const zi = this._findZoneAt(px, py);
+      if (zi >= 0 && this.zones[zi].state === 'hidden') {
+        this.dragActive = false;
+        this._flingAt(zi);
+        return;
+      }
+    } else if (this.aimedZone >= 0) {
+      this.dragActive = false;
+      this._flingAt(this.aimedZone);
+      return;
+    }
+
+    this.dragActive = false;
+    this.aimedZone = -1;
+    this.render();
+  }
+
+  handleDragCancel() {
+    this.dragActive = false;
+    this.aimedZone = -1;
+    this.render();
+  }
+
+  handleTap(px, py) {
+    if (this.won || this.animating) return;
+    const zi = this._findZoneAt(px, py);
+    if (zi >= 0 && this.zones[zi].state === 'hidden') {
+      this._flingAt(zi);
+    }
   }
 }
 
