@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>🥒 Christmas Pickle</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #1a3a0a;
+      color: #f0e8d0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ===== LAUNCHER ===== */
+    #screen-launcher {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 24px 16px 32px;
+    }
+    .launcher-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+    .launcher-header h1 { font-size: 2.2rem; letter-spacing: -0.5px; }
+    .launcher-header .date { color: #a8d08d; font-size: 0.95rem; margin-top: 6px; }
+    .launcher-header .tagline { color: #7aaa5a; font-size: 0.8rem; margin-top: 4px; }
+
+    .prototype-grid { display: flex; flex-direction: column; gap: 12px; }
+
+    .proto-card {
+      background: #243d14;
+      border: 2px solid #3a5e20;
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      transition: background 0.15s;
+    }
+    .proto-card.available {
+      border-color: #6aab3e;
+      cursor: pointer;
+    }
+    .proto-card.available:hover, .proto-card.available:active {
+      background: #2e4e1a;
+    }
+    .proto-icon { font-size: 2rem; width: 44px; text-align: center; flex-shrink: 0; }
+    .proto-info { flex: 1; min-width: 0; }
+    .proto-name { font-weight: 700; font-size: 1rem; }
+    .proto-desc { font-size: 0.78rem; color: #90b870; margin-top: 3px; line-height: 1.4; }
+    .proto-score { font-size: 0.75rem; color: #ffd700; margin-top: 5px; }
+    .proto-btn {
+      background: #6aab3e;
+      color: #0f2006;
+      border: none;
+      border-radius: 8px;
+      padding: 9px 16px;
+      font-weight: 700;
+      cursor: pointer;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .proto-btn:disabled {
+      background: #2e3e20;
+      color: #6a7a5a;
+      cursor: not-allowed;
+    }
+
+    /* ===== GAME SCREEN ===== */
+    #screen-game {
+      display: none;
+      flex-direction: column;
+      height: 100dvh;
+      height: 100vh;
+    }
+    #game-header {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      background: #243d14;
+      gap: 10px;
+      border-bottom: 2px solid #3a5e20;
+      flex-shrink: 0;
+    }
+    #btn-back {
+      background: none;
+      border: 1px solid #6aab3e;
+      color: #90b870;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    #game-title { flex: 1; font-weight: 700; font-size: 1rem; }
+    #game-score { font-size: 0.9rem; color: #ffd700; font-weight: 600; white-space: nowrap; }
+
+    #canvas-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      min-height: 0;
+    }
+    #game-canvas {
+      display: block;
+      touch-action: none;
+    }
+
+    #game-controls {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+      padding: 10px 16px;
+      flex-shrink: 0;
+      background: #1a3a0a;
+    }
+    .ctrl-btn {
+      background: #243d14;
+      border: 2px solid #3a5e20;
+      color: #f0e8d0;
+      padding: 9px 20px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.1s;
+    }
+    .ctrl-btn.active {
+      background: #6aab3e;
+      color: #0f2006;
+      border-color: #6aab3e;
+    }
+
+    /* ===== WIN OVERLAY ===== */
+    #win-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.72);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 16px;
+    }
+    #win-overlay.show { display: flex; }
+    .win-card {
+      background: #243d14;
+      border: 3px solid #ffd700;
+      border-radius: 18px;
+      padding: 28px 24px;
+      text-align: center;
+      max-width: 340px;
+      width: 100%;
+    }
+    .win-card .big-pickle { font-size: 3.5rem; }
+    .win-card h2 { font-size: 1.8rem; margin: 8px 0 4px; }
+    .win-card .win-sub { color: #a8d08d; font-size: 0.9rem; }
+    .win-card .win-score { font-size: 1.3rem; color: #ffd700; font-weight: 700; margin: 14px 0 4px; }
+    .win-card .win-stars { font-size: 1.8rem; margin-bottom: 4px; }
+    .win-card .win-label { font-size: 0.88rem; color: #90b870; margin-bottom: 18px; }
+    .win-btn {
+      width: 100%;
+      border: none;
+      border-radius: 10px;
+      padding: 11px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 6px;
+    }
+    .win-btn.primary { background: #6aab3e; color: #0f2006; }
+    .win-btn.secondary { background: #243d14; border: 1px solid #3a5e20; color: #a8d08d; }
+  </style>
+</head>
+<body>
+
+<!-- ===== LAUNCHER ===== -->
+<div id="screen-launcher">
+  <div class="launcher-header">
+    <h1>🥒 Christmas Pickle</h1>
+    <div class="date" id="today-date-label"></div>
+    <div class="tagline">Daily puzzles · Compare scores with family</div>
+  </div>
+  <div class="prototype-grid" id="prototype-grid"></div>
+</div>
+
+<!-- ===== GAME SCREEN ===== -->
+<div id="screen-game">
+  <div id="game-header">
+    <button id="btn-back">← Menu</button>
+    <div id="game-title">Tree Finder</div>
+    <div id="game-score">Moves: 0</div>
+  </div>
+  <div id="canvas-container">
+    <canvas id="game-canvas"></canvas>
+  </div>
+  <div id="game-controls"></div>
+</div>
+
+<!-- ===== WIN OVERLAY ===== -->
+<div id="win-overlay">
+  <div class="win-card">
+    <div class="big-pickle">🥒</div>
+    <h2>Found it!</h2>
+    <div class="win-sub" id="win-sub-text"></div>
+    <div class="win-score" id="win-score-text"></div>
+    <div class="win-stars" id="win-stars"></div>
+    <div class="win-label" id="win-label"></div>
+    <button class="win-btn primary" id="btn-share">📋 Copy Score to Share</button>
+    <button class="win-btn secondary" id="btn-win-close">Keep Playing</button>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================
+// UTILITIES
+// ============================================================
+
+function getTodayString() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+function hashString(str) {
+  // FNV-1a 32-bit
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h;
+}
+
+function makePRNG(seed) {
+  // Mulberry32 — fast, deterministic, good distribution
+  let s = seed >>> 0;
+  return function () {
+    s |= 0;
+    s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function loadScore(protoId) {
+  try {
+    const key = `pickle-${getTodayString()}-${protoId}`;
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveScore(protoId, moves) {
+  try {
+    const key = `pickle-${getTodayString()}-${protoId}`;
+    const existing = loadScore(protoId);
+    // Only save if it's a new best (or first time)
+    if (!existing || moves < existing.moves) {
+      localStorage.setItem(key, JSON.stringify({ moves, date: getTodayString() }));
+    }
+  } catch {}
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.lineTo(x + r, y + h);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+// ============================================================
+// PROTOTYPE REGISTRY
+// ============================================================
+
+const PROTOTYPES = [
+  {
+    id: 'grid-reveal',
+    name: 'Tree Finder',
+    icon: '🔍',
+    desc: 'Tap cells on the Christmas tree to reveal temperature hints. Find the pickle in fewest taps.',
+    available: true,
+    create: (canvas, seed) => new GridRevealGame(canvas, seed),
+  },
+  {
+    id: 'tree-dungeon',
+    name: 'Tree Dungeon',
+    icon: '🗺️',
+    desc: 'Navigate the tree branch-by-branch like a dungeon. Limited visibility — explore carefully.',
+    available: false,
+  },
+  {
+    id: 'light-strings',
+    name: 'String of Lights',
+    icon: '💡',
+    desc: 'Rotate light-string segments to connect all paths. The pickle hides where they all meet.',
+    available: false,
+  },
+  {
+    id: 'branch-pusher',
+    name: 'Branch Pusher',
+    icon: '🎄',
+    desc: 'Slide branches and ornaments aside to dig down to the hidden pickle.',
+    available: false,
+  },
+  {
+    id: 'ornament-fling',
+    name: 'Ornament Fling',
+    icon: '🎯',
+    desc: 'Drag and fling ornaments at tree zones to reveal them. Find the pickle in fewest flings.',
+    available: false,
+  },
+];
+
+// ============================================================
+// LAUNCHER
+// ============================================================
+
+const TODAY = getTodayString();
+const DAILY_SEED = hashString(TODAY);
+
+document.getElementById('today-date-label').textContent = new Date().toLocaleDateString('en-US', {
+  weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+});
+
+function renderLauncher() {
+  const grid = document.getElementById('prototype-grid');
+  grid.innerHTML = '';
+  for (const proto of PROTOTYPES) {
+    const score = loadScore(proto.id);
+    const card = document.createElement('div');
+    card.className = 'proto-card' + (proto.available ? ' available' : '');
+
+    const scoreHtml = score
+      ? `<div class="proto-score">⭐ Today's best: ${score.moves} move${score.moves !== 1 ? 's' : ''}</div>`
+      : '';
+
+    card.innerHTML = `
+      <div class="proto-icon">${proto.icon}</div>
+      <div class="proto-info">
+        <div class="proto-name">${proto.name}</div>
+        <div class="proto-desc">${proto.desc}</div>
+        ${scoreHtml}
+      </div>
+      <button class="proto-btn" ${proto.available ? '' : 'disabled'}>
+        ${proto.available ? (score ? 'Play Again' : 'Play') : 'Soon'}
+      </button>
+    `;
+
+    if (proto.available) {
+      card.addEventListener('click', () => startGame(proto));
+    }
+    grid.appendChild(card);
+  }
+}
+
+// ============================================================
+// GAME SCREEN
+// ============================================================
+
+let currentGame = null;
+let resizeHandler = null;
+
+function renderControls() {
+  const bar = document.getElementById('game-controls');
+  bar.innerHTML = '';
+  if (!currentGame || !currentGame.getControls) return;
+  for (const ctrl of currentGame.getControls()) {
+    const btn = document.createElement('button');
+    btn.className = 'ctrl-btn' + (ctrl.active ? ' active' : '');
+    btn.textContent = ctrl.label;
+    btn.addEventListener('click', () => {
+      ctrl.action();
+      renderControls();
+    });
+    bar.appendChild(btn);
+  }
+}
+
+function startGame(proto) {
+  // Switch screens
+  document.getElementById('screen-launcher').style.display = 'none';
+  const gameScreen = document.getElementById('screen-game');
+  gameScreen.style.display = 'flex';
+  document.getElementById('game-title').textContent = proto.name;
+  document.getElementById('game-score').textContent = 'Moves: 0';
+
+  const canvas = document.getElementById('game-canvas');
+  const container = document.getElementById('canvas-container');
+
+  // Create game instance
+  currentGame = proto.create(canvas, DAILY_SEED);
+
+  currentGame.onScoreUpdate = (moves) => {
+    document.getElementById('game-score').textContent = `Moves: ${moves}`;
+  };
+  currentGame.onWin = (moves) => {
+    saveScore(proto.id, moves);
+    showWin(proto, moves);
+  };
+  currentGame.onControlsChange = renderControls;
+
+  // Resize canvas to fit container
+  function doResize() {
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    currentGame.resize(w, h);
+  }
+  if (resizeHandler) window.removeEventListener('resize', resizeHandler);
+  resizeHandler = doResize;
+  window.addEventListener('resize', resizeHandler);
+  doResize();
+
+  renderControls();
+
+  // Input: unified pointer handler with canvas coordinate mapping
+  // (remove old listeners by replacing canvas clone)
+  const newCanvas = canvas.cloneNode(true);
+  canvas.parentNode.replaceChild(newCanvas, canvas);
+  currentGame.canvas = newCanvas;
+  currentGame.ctx = newCanvas.getContext('2d');
+  doResize(); // re-render on new canvas
+
+  let tapStart = null;
+  newCanvas.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    newCanvas.setPointerCapture(e.pointerId);
+    const rect = newCanvas.getBoundingClientRect();
+    tapStart = {
+      x: (e.clientX - rect.left) * (newCanvas.width / rect.width),
+      y: (e.clientY - rect.top) * (newCanvas.height / rect.height),
+      t: Date.now(),
+    };
+  });
+  newCanvas.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    if (!tapStart) return;
+    const rect = newCanvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (newCanvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (newCanvas.height / rect.height);
+    const dx = x - tapStart.x;
+    const dy = y - tapStart.y;
+    if (Math.sqrt(dx * dx + dy * dy) < 12 && Date.now() - tapStart.t < 500) {
+      currentGame.handleTap(x, y);
+    }
+    tapStart = null;
+  });
+  newCanvas.addEventListener('pointercancel', () => { tapStart = null; });
+}
+
+function goHome() {
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler);
+    resizeHandler = null;
+  }
+  currentGame = null;
+  document.getElementById('screen-game').style.display = 'none';
+  document.getElementById('win-overlay').classList.remove('show');
+  document.getElementById('screen-launcher').style.display = '';
+  renderLauncher();
+}
+
+document.getElementById('btn-back').addEventListener('click', goHome);
+
+// ============================================================
+// WIN OVERLAY
+// ============================================================
+
+function scoreRating(moves, total) {
+  const pct = moves / total;
+  if (pct <= 0.12) return { stars: '⭐⭐⭐', label: 'Incredible! You have a nose for pickles!' };
+  if (pct <= 0.30) return { stars: '⭐⭐', label: 'Great find! Very efficient!' };
+  if (pct <= 0.55) return { stars: '⭐', label: 'Nice work — pickle found!' };
+  return { stars: '🔍', label: 'You found it! Persistence pays off.' };
+}
+
+let _winProto = null;
+let _winMoves = 0;
+
+function showWin(proto, moves) {
+  _winProto = proto;
+  _winMoves = moves;
+  const total = currentGame ? currentGame.totalCells : 40;
+  const rating = scoreRating(moves, total);
+
+  document.getElementById('win-sub-text').textContent = `The Christmas pickle was found!`;
+  document.getElementById('win-score-text').textContent = `${moves} move${moves !== 1 ? 's' : ''}`;
+  document.getElementById('win-stars').textContent = rating.stars;
+  document.getElementById('win-label').textContent = rating.label;
+  document.getElementById('win-overlay').classList.add('show');
+}
+
+document.getElementById('btn-share').addEventListener('click', () => {
+  const total = currentGame ? currentGame.totalCells : 40;
+  const rating = scoreRating(_winMoves, total);
+  const text = [
+    `🥒 Christmas Pickle — ${TODAY}`,
+    `${_winProto ? _winProto.name : 'Tree Finder'}`,
+    `${rating.stars} Found in ${_winMoves} move${_winMoves !== 1 ? 's' : ''}`,
+    `(out of ${total} possible cells)`,
+  ].join('\n');
+
+  navigator.clipboard.writeText(text)
+    .then(() => {
+      const btn = document.getElementById('btn-share');
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy Score to Share'; }, 2000);
+    })
+    .catch(() => { alert('Copy manually:\n\n' + text); });
+});
+
+document.getElementById('btn-win-close').addEventListener('click', () => {
+  document.getElementById('win-overlay').classList.remove('show');
+});
+
+// ============================================================
+// PROTOTYPE: GRID REVEAL (Tree Finder)
+// ============================================================
+// The Christmas tree is a grid. Tap hidden cells to reveal how
+// many steps (graph distance) they are from the pickle.
+// 🔥 = 1 step away,  ❄ = far away.  Find the 🥒 in fewest taps.
+// ============================================================
+
+class GridRevealGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.seed = seed;
+    this.moves = 0;
+    this.won = false;
+    this.flagMode = false;
+
+    // Callbacks set by startGame
+    this.onScoreUpdate = null;
+    this.onWin = null;
+    this.onControlsChange = null;
+
+    // Tree grid dimensions
+    this.COLS = 9;
+    this.ROWS = 8;
+
+    // Build the set of valid tree cells (keys = "row,col")
+    this._buildTree();
+
+    // Place the pickle using a seeded RNG
+    const rng = makePRNG(seed);
+    // Pickable cells: not the star tip (row 0) or trunk (row 7)
+    const pickable = [...this.treeCells].filter(k => {
+      const r = parseInt(k);
+      return r > 0 && r < this.ROWS - 1;
+    });
+    // Fisher-Yates shuffle then take first
+    for (let i = pickable.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pickable[i], pickable[j]] = [pickable[j], pickable[i]];
+    }
+    this.pickleKey = pickable[0];
+
+    // Cell states
+    this.cellState = {};
+    for (const k of this.treeCells) this.cellState[k] = 'hidden';
+
+    // Star is always shown
+    this.starKey = `0,${Math.floor(this.COLS / 2)}`;
+    this.cellState[this.starKey] = 'revealed';
+
+    this.totalCells = pickable.length; // scoreable cells only
+
+    this._computeDistances();
+  }
+
+  _buildTree() {
+    // 9 columns (0–8), 8 rows (0–7)
+    // Tiered Christmas tree shape:
+    //   Row 0: col 4              (star tip)
+    //   Row 1: cols 3–5           (tier 1 top)
+    //   Row 2: cols 2–6
+    //   Row 3: cols 1–7           (tier 1 base)
+    //   Row 4: cols 2–6           (tier 2 top)
+    //   Row 5: cols 1–7
+    //   Row 6: cols 0–8           (tier 2/3 base — widest)
+    //   Row 7: cols 3–5           (trunk)
+    const ranges = [[4,4],[3,5],[2,6],[1,7],[2,6],[1,7],[0,8],[3,5]];
+    this.treeCells = new Set();
+    for (let r = 0; r < this.ROWS; r++) {
+      const [lo, hi] = ranges[r];
+      for (let c = lo; c <= hi; c++) {
+        this.treeCells.add(`${r},${c}`);
+      }
+    }
+  }
+
+  _computeDistances() {
+    // BFS from pickle to get graph distance for every tree cell
+    this.dist = {};
+    const queue = [this.pickleKey];
+    this.dist[this.pickleKey] = 0;
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+    while (queue.length) {
+      const key = queue.shift();
+      const [r, c] = key.split(',').map(Number);
+      for (const [dr, dc] of dirs) {
+        const nk = `${r+dr},${c+dc}`;
+        if (this.treeCells.has(nk) && !(nk in this.dist)) {
+          this.dist[nk] = this.dist[key] + 1;
+          queue.push(nk);
+        }
+      }
+    }
+  }
+
+  resize(w, h) {
+    this.canvas.width = w;
+    this.canvas.height = h;
+    // Reserve space at bottom for legend
+    const legendH = 28;
+    const usableH = h - legendH;
+    const padX = 12, padY = 12;
+    const cellW = (w - padX * 2) / this.COLS;
+    const cellH = (usableH - padY * 2) / this.ROWS;
+    this.cs = Math.floor(Math.min(cellW, cellH, 64));
+    // Center the grid horizontally; start from top with padding
+    this.ox = Math.floor((w - this.cs * this.COLS) / 2);
+    this.oy = Math.floor((usableH - this.cs * this.ROWS) / 2) + padY;
+    this.legendY = h - legendH / 2;
+    this.render();
+  }
+
+  // Colour for a given graph distance (hot = red, cold = blue)
+  _distColor(d) {
+    const colors = ['#ff2222','#ff6600','#ffaa00','#ccdd00','#66cc44','#44aadd','#4477ff'];
+    return colors[Math.min(d - 1, colors.length - 1)];
+  }
+
+  // Text label for distance
+  _distLabel(d) {
+    if (d === 1) return 'Very\nclose';
+    if (d <= 3)  return 'Closer';
+    if (d <= 5)  return 'Far';
+    return 'Very\nfar';
+  }
+
+  render() {
+    const { ctx, canvas, cs, ox, oy } = this;
+    const w = canvas.width, h = canvas.height;
+
+    // Background
+    ctx.fillStyle = '#1a3a0a';
+    ctx.fillRect(0, 0, w, h);
+
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      const x = ox + c * cs;
+      const y = oy + r * cs;
+      const gap = 3;
+      const state = this.cellState[key];
+      const isPickle = key === this.pickleKey;
+      const isTrunk = r === this.ROWS - 1;
+      const isStar = key === this.starKey;
+
+      // Cell background
+      ctx.save();
+      roundRect(ctx, x + gap, y + gap, cs - gap * 2, cs - gap * 2, 5);
+
+      if (state === 'hidden') {
+        ctx.fillStyle = isTrunk ? '#5a3010' : '#2e5a1a';
+        ctx.fill();
+        // Subtle cell stroke
+        ctx.strokeStyle = isTrunk ? '#6a3a18' : '#3a7020';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else if (state === 'flagged') {
+        ctx.fillStyle = '#1a2a5a';
+        ctx.fill();
+        ctx.strokeStyle = '#4477cc';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } else if (state === 'revealed') {
+        if (isPickle) {
+          ctx.fillStyle = '#1a3a0a';
+          ctx.fill();
+          ctx.strokeStyle = '#ffd700';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        } else if (isStar) {
+          ctx.fillStyle = '#2e5a1a';
+          ctx.fill();
+        } else {
+          const d = this.dist[key];
+          const col = this._distColor(d);
+          ctx.fillStyle = col + '28';
+          ctx.fill();
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+
+      // Cell content (emoji / icons)
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const cx = x + cs / 2;
+      const cy = y + cs / 2;
+      const emojiSize = Math.max(12, Math.floor(cs * 0.5));
+      ctx.font = `${emojiSize}px serif`;
+
+      if (isStar && state === 'revealed') {
+        ctx.font = `${Math.floor(cs * 0.6)}px serif`;
+        ctx.fillText('⭐', cx, cy);
+      } else if (state === 'hidden') {
+        if (isTrunk) {
+          // Draw trunk wood grain
+          ctx.fillStyle = '#8b5e3c';
+          ctx.fillRect(cx - cs * 0.14, y + gap + 3, cs * 0.28, cs - gap * 2 - 6);
+        } else {
+          // Decorative ornament on some cells
+          if ((r + c) % 3 === 1) {
+            ctx.globalAlpha = 0.45;
+            const ornaments = ['🔴','🟡','🔵','🟢'];
+            ctx.font = `${Math.floor(cs * 0.38)}px serif`;
+            ctx.fillText(ornaments[(r * 9 + c) % ornaments.length], cx, cy);
+          }
+        }
+      } else if (state === 'flagged') {
+        ctx.fillText('🚩', cx, cy);
+      } else if (state === 'revealed' && !isStar) {
+        if (isPickle) {
+          ctx.font = `${Math.floor(cs * 0.65)}px serif`;
+          ctx.fillText('🥒', cx, cy);
+        } else {
+          const d = this.dist[key];
+          const label = this._distLabel(d);
+          const lines = label.split('\n');
+          const fontSize = Math.max(9, Math.floor(cs * 0.2));
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          ctx.fillStyle = this._distColor(d);
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          const lineH = fontSize + 2;
+          const startY = cy - ((lines.length - 1) * lineH) / 2;
+          for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], cx, startY + i * lineH);
+          }
+        }
+      }
+      ctx.restore();
+    }
+
+    // Legend bar at bottom
+    this._drawLegend();
+  }
+
+  _drawLegend() {
+    const ctx = this.ctx;
+    const y = this.legendY;
+    const items = [
+      { label: 'Very close', d: 1 },
+      { label: 'Closer',     d: 2 },
+      { label: 'Far',        d: 4 },
+      { label: 'Very far',   d: 6 },
+    ];
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textBaseline = 'middle';
+    const totalW = items.length * 80;
+    let x = Math.floor((this.canvas.width - totalW) / 2);
+    for (const item of items) {
+      ctx.fillStyle = this._distColor(item.d);
+      ctx.fillText(item.label, x, y);
+      x += 80;
+    }
+    ctx.restore();
+  }
+
+  handleTap(px, py) {
+    if (this.won) return;
+    const { cs, ox, oy } = this;
+    const c = Math.floor((px - ox) / cs);
+    const r = Math.floor((py - oy) / cs);
+    const key = `${r},${c}`;
+
+    if (!this.treeCells.has(key)) return;
+    const state = this.cellState[key];
+
+    if (this.flagMode) {
+      if (state === 'hidden') {
+        this.cellState[key] = 'flagged';
+        this.moves++;
+        if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+      } else if (state === 'flagged') {
+        this.cellState[key] = 'hidden';
+      }
+      this.render();
+      return;
+    }
+
+    // Reveal mode
+    if (state !== 'hidden') return;
+    this.cellState[key] = 'revealed';
+    this.moves++;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+
+    if (key === this.pickleKey) {
+      this.won = true;
+      this.render();
+      setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 350);
+    } else {
+      this.render();
+    }
+  }
+
+  getControls() {
+    return [
+      { label: '🔍 Reveal', active: !this.flagMode, action: () => { this.flagMode = false; } },
+      { label: '🚩 Flag',   active:  this.flagMode, action: () => { this.flagMode = true;  } },
+    ];
+  }
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+
+renderLauncher();
+</script>
+</body>
+</html>
