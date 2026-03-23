@@ -425,6 +425,14 @@ const PROTOTYPES = [
     available: true,
     create: (canvas, seed) => new PressYourLuckGame(canvas, seed),
   },
+  {
+    id: 'excavate',
+    name: 'Excavate',
+    icon: '⛏️',
+    desc: 'Each cell has hidden layers. Dig deeper to get better hints — but the pickle only reveals at the very bottom.',
+    available: true,
+    create: (canvas, seed) => new ExcavateGame(canvas, seed),
+  },
 ];
 
 // ============================================================
@@ -2513,6 +2521,307 @@ class PressYourLuckGame {
         action: () => this._useHint(),
       },
     ];
+  }
+}
+
+// ============================================================
+// EXCAVATE
+// ============================================================
+// Same tree grid. Each cell has 1–3 seeded layers.
+// Tap to dig one layer at a time (costs 1 move each).
+//   Depth-1 cells: one tap → immediate full reveal
+//   Depth-2 cells: tap 1 → broad hint; tap 2 → full reveal
+//   Depth-3 cells: tap 1 → broad hint; tap 2 → tight hint; tap 3 → full reveal
+// Pickle is at the deepest layer of its cell (depth 2 or 3).
+// Score = total digs used.
+// ============================================================
+
+class ExcavateGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.won = false;
+    this.moves = 0;
+
+    this.onScoreUpdate = null;
+    this.onWin = null;
+
+    this.COLS = 9;
+    this.ROWS = 8;
+    this._buildTree();
+
+    const rng = makePRNG(seed ^ 0xC0FFEE11);
+
+    // Place pickle (exclude star row 0 and trunk row 7)
+    const pickable = [...this.treeCells].filter(k => {
+      const r = parseInt(k);
+      return r > 0 && r < this.ROWS - 1;
+    });
+    for (let i = pickable.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pickable[i], pickable[j]] = [pickable[j], pickable[i]];
+    }
+    this.pickleKey = pickable[0];
+    this.totalCells = pickable.length;
+    this.starKey = `0,${Math.floor(this.COLS / 2)}`;
+
+    this._computeDistances();
+
+    // Assign depth and ornament to each cell
+    const ornaments = ['🎁','🔔','🕯️','🎀','🍪','🧦','🌟'];
+    this.cells = {};
+    for (const k of this.treeCells) {
+      const r = parseInt(k);
+      if (r === 0 || r === this.ROWS - 1) {
+        this.cells[k] = { depth: 0, dug: 0, ornament: null };
+        continue;
+      }
+      const depth = k === this.pickleKey
+        ? Math.floor(rng() * 2) + 2           // pickle: 2 or 3
+        : Math.floor(rng() * 3) + 1;          // others: 1, 2, or 3
+      this.cells[k] = {
+        depth,
+        dug: 0,
+        ornament: ornaments[Math.floor(rng() * ornaments.length)],
+      };
+    }
+
+    this.cursorKey = null;
+  }
+
+  _buildTree() {
+    const ranges = [[4,4],[3,5],[2,6],[1,7],[2,6],[1,7],[0,8],[3,5]];
+    this.treeCells = new Set();
+    for (let r = 0; r < this.ROWS; r++) {
+      const [lo, hi] = ranges[r];
+      for (let c = lo; c <= hi; c++) {
+        this.treeCells.add(`${r},${c}`);
+      }
+    }
+  }
+
+  _computeDistances() {
+    this.dist = {};
+    const queue = [this.pickleKey];
+    this.dist[this.pickleKey] = 0;
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+    while (queue.length) {
+      const key = queue.shift();
+      const [r, c] = key.split(',').map(Number);
+      for (const [dr, dc] of dirs) {
+        const nk = `${r+dr},${c+dc}`;
+        if (this.treeCells.has(nk) && !(nk in this.dist)) {
+          this.dist[nk] = this.dist[key] + 1;
+          queue.push(nk);
+        }
+      }
+    }
+  }
+
+  _broadHint(key) {
+    const d = this.dist[key];
+    if (d === 1) return { text: 'Very\nclose', color: '#ff3333' };
+    if (d <= 3)  return { text: 'Closer',     color: '#ff8800' };
+    if (d <= 5)  return { text: 'Far',        color: '#88cc44' };
+    return           { text: 'Very\nfar',   color: '#4488ff' };
+  }
+
+  _tightHint(key) {
+    const d = this.dist[key];
+    const color = d <= 2 ? '#ff3333' : d <= 4 ? '#ffaa00' : '#4488ff';
+    return { text: `${d} step${d === 1 ? '' : 's'}`, color };
+  }
+
+  resize(w, h) {
+    this.canvas.width = w;
+    this.canvas.height = h;
+    const legendH = 32;
+    const usableH = h - legendH;
+    this.cs = Math.floor(Math.min((w - 24) / this.COLS, (usableH - 24) / this.ROWS, 64));
+    this.ox = Math.floor((w - this.cs * this.COLS) / 2);
+    this.oy = Math.floor((usableH - this.cs * this.ROWS) / 2) + 12;
+    this.legendY = h - legendH / 2;
+    this.render();
+  }
+
+  render() {
+    const { ctx, canvas, cs, ox, oy } = this;
+    const w = canvas.width, h = canvas.height;
+
+    ctx.fillStyle = '#1a1a0a';
+    ctx.fillRect(0, 0, w, h);
+
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      const x = ox + c * cs;
+      const y = oy + r * cs;
+      const gap = 3;
+      const cell = this.cells[key];
+      const isTrunk = r === this.ROWS - 1;
+      const isStar = key === this.starKey;
+      const isCursor = key === this.cursorKey && !this.won;
+      const isPickle = key === this.pickleKey;
+      const fullyDug = cell.depth > 0 && cell.dug >= cell.depth;
+
+      // Background
+      ctx.save();
+      roundRect(ctx, x + gap, y + gap, cs - gap * 2, cs - gap * 2, 5);
+      if (isStar) {
+        ctx.fillStyle = '#2e5a1a'; ctx.fill();
+      } else if (isTrunk) {
+        ctx.fillStyle = '#5a3010'; ctx.fill();
+        ctx.strokeStyle = '#6a3a18'; ctx.lineWidth = 1; ctx.stroke();
+      } else if (fullyDug) {
+        ctx.fillStyle = isPickle ? '#1a3a0a' : '#2a2a1a';
+        ctx.fill();
+        ctx.strokeStyle = isPickle ? '#ffd700' : '#555533';
+        ctx.lineWidth = isPickle ? 3 : 1.5; ctx.stroke();
+      } else if (cell.dug === 0) {
+        // Undug: earthy brown-green
+        ctx.fillStyle = '#3a2e10'; ctx.fill();
+        ctx.strokeStyle = isCursor ? '#ffffff' : '#6a5a28';
+        ctx.lineWidth = isCursor ? 2.5 : 1; ctx.stroke();
+      } else {
+        // Partially dug: lighter dirt
+        ctx.fillStyle = '#4a3a18'; ctx.fill();
+        ctx.strokeStyle = isCursor ? '#ffffff' : '#8a6a38';
+        ctx.lineWidth = isCursor ? 2.5 : 1.5; ctx.stroke();
+      }
+      ctx.restore();
+
+      // Content
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const cx = x + cs / 2;
+      const cy = y + cs / 2;
+
+      if (isStar) {
+        ctx.font = `${Math.floor(cs * 0.6)}px serif`;
+        ctx.fillText('⭐', cx, cy);
+      } else if (isTrunk) {
+        ctx.fillStyle = '#8b5e3c';
+        ctx.fillRect(cx - cs * 0.14, y + gap + 3, cs * 0.28, cs - gap * 2 - 6);
+      } else if (fullyDug) {
+        ctx.font = `${Math.floor(cs * 0.62)}px serif`;
+        ctx.fillText(isPickle ? '🥒' : cell.ornament, cx, cy);
+      } else {
+        // Show hint if partially dug
+        if (cell.dug >= 1) {
+          const hint = cell.dug === 1 ? this._broadHint(key) : this._tightHint(key);
+          const lines = hint.text.split('\n');
+          const fs = Math.max(9, Math.floor(cs * 0.2));
+          ctx.font = `bold ${fs}px sans-serif`;
+          ctx.fillStyle = hint.color;
+          const lineH = fs + 2;
+          const startY = cy - ((lines.length - 1) * lineH) / 2 - cs * 0.1;
+          for (let i = 0; i < lines.length; i++) {
+            ctx.fillText(lines[i], cx, startY + i * lineH);
+          }
+        }
+
+        // Depth indicator: horizontal lines at bottom of cell
+        const remaining = cell.depth - cell.dug;
+        const lineW = cs * 0.55;
+        const lineSpacing = Math.min(5, (cs * 0.3) / Math.max(remaining, 1));
+        const startLineY = y + cs - gap - 5;
+        ctx.strokeStyle = cell.dug > 0 ? '#c8a050' : '#8a6a28';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < remaining; i++) {
+          const ly = startLineY - i * lineSpacing;
+          ctx.beginPath();
+          ctx.moveTo(cx - lineW / 2, ly);
+          ctx.lineTo(cx + lineW / 2, ly);
+          ctx.stroke();
+        }
+
+        // Depth badge (top-right corner)
+        if (cell.dug === 0) {
+          const fs2 = Math.max(8, Math.floor(cs * 0.22));
+          ctx.font = `bold ${fs2}px sans-serif`;
+          ctx.fillStyle = '#c8a050';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'top';
+          ctx.fillText(`${cell.depth}`, x + cs - gap - 3, y + gap + 2);
+        }
+      }
+      ctx.restore();
+    }
+
+    this._drawLegend();
+  }
+
+  _drawLegend() {
+    const ctx = this.ctx;
+    const y = this.legendY;
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textBaseline = 'middle';
+    const items = [
+      { label: '1 = quick',   color: '#c8a050' },
+      { label: '2 = hint+dig', color: '#c8a050' },
+      { label: '3 = deep',    color: '#c8a050' },
+      { label: `Digs: ${this.moves}`, color: '#aaaaaa' },
+    ];
+    const totalW = items.length * 86;
+    let x = Math.floor((this.canvas.width - totalW) / 2);
+    for (const item of items) {
+      ctx.fillStyle = item.color;
+      ctx.fillText(item.label, x, y);
+      x += 86;
+    }
+    ctx.restore();
+  }
+
+  _dig(key) {
+    if (this.won) return;
+    if (!this.treeCells.has(key)) return;
+    const cell = this.cells[key];
+    if (!cell || cell.depth === 0) return;       // star/trunk
+    if (cell.dug >= cell.depth) return;          // already fully dug
+
+    cell.dug++;
+    this.moves++;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+
+    if (cell.dug >= cell.depth && key === this.pickleKey) {
+      this.won = true;
+      this.render();
+      setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 350);
+    } else {
+      this.render();
+    }
+  }
+
+  handleTap(px, py) {
+    const c = Math.floor((px - this.ox) / this.cs);
+    const r = Math.floor((py - this.oy) / this.cs);
+    this._dig(`${r},${c}`);
+  }
+
+  move(dr, dc) {
+    if (this.won) return;
+    if (!this.cursorKey) {
+      this.cursorKey = `3,4`;
+      if (!this.treeCells.has(this.cursorKey)) {
+        this.cursorKey = [...this.treeCells].find(k => parseInt(k) === 3);
+      }
+      this.render();
+      return;
+    }
+    const [r, c] = this.cursorKey.split(',').map(Number);
+    let nr = r + dr, nc = c + dc;
+    while (nr >= 0 && nr < this.ROWS && nc >= 0 && nc < this.COLS) {
+      const nk = `${nr},${nc}`;
+      if (this.treeCells.has(nk)) { this.cursorKey = nk; this.render(); return; }
+      nr += dr; nc += dc;
+    }
+  }
+
+  handleKey(key) {
+    if ((key === 'Enter' || key === ' ') && this.cursorKey) {
+      this._dig(this.cursorKey);
+    }
   }
 }
 

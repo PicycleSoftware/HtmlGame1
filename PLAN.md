@@ -124,7 +124,7 @@ Sokoban-style: push ornaments and branches aside to reach the pickle buried unde
 
 ---
 
-### ⬜ 7. Excavate (`excavate`) ⛏️
+### ✅ 7. Excavate (`excavate`) ⛏️ — DONE
 **Concept:** Each cell has 1–3 hidden layers. Each tap digs one layer deeper and gives a distance hint. Deeper digs cost more but reveal stronger hints. The pickle is buried at the bottom layer of one cell — dig to find it.
 
 **Mechanics:**
@@ -143,6 +143,46 @@ Sokoban-style: push ornaments and branches aside to reach the pickle buried unde
 
 **Excitement factor:** Slow excavation builds tension. You know you're getting closer on each layer but can't skip ahead. Efficient players probe shallow across many cells; bold players go deep fast.
 
+### ⬜ 8. Nonogram / Picross (`nonogram`)
+Fill in rows and columns to reveal the tree image. The pickle's position is encoded in the solution.
+- Classic Picross rules: number clues on rows/columns indicate runs of filled cells
+- Solved grid reveals a tree silhouette with the pickle cell highlighted
+- Score = incorrect cells filled (errors)
+
+### ⬜ 9. House Exploration (`house-explore`)
+Top-down RPG (Link's Awakening style). Walk through rooms of the house on Christmas Eve, talk to NPCs for clues, find the pickle hidden somewhere in the tree room.
+- Grid-based movement, multiple rooms
+- NPCs give directional or hot/cold clues
+- Score = steps taken
+
+### ⬜ 10. Metroidvania Tree (`metroidvania`)
+Side-scrolling tree with locked branches. Find key ornaments to unlock new sections and eventually reach the pickle.
+- Left/right/up/down movement across branches
+- Certain paths blocked until player finds matching key ornament
+- Score = moves to reach pickle
+
+---
+
+## Game Component Ideas
+Building blocks that could enhance or combine into prototypes — not strong enough as standalone games.
+
+- **Pickle Reassembly** — pickle shattered and pieces are hidden around the tree. Finding each piece snaps it visibly onto a pickle outline. Good for: making progress feel cumulative and visible; could layer onto any exploration game.
+- **Pickle Growth** — a pickle seed is planted somewhere; "watering" nearby zones shows organic growth as feedback. Good for: a more alive/tactile alternative to hot/cold distance labels.
+- **Pickle Crafting** — ingredients (cucumber, dill, vinegar, salt) scattered across the tree/house, each behind a mini-puzzle. Combine to create the pickle. Good for: a ceremony/payoff moment; multi-stage structure.
+
+---
+
+## Considered and Discarded
+
+| Idea | Reason discarded |
+|---|---|
+| **Mastermind** — guess ornament color sequence, get peg feedback | Boring |
+| **Breakout** — bounce ball through tree layers | No real-time/reaction games |
+| **Snake** — guide tinsel through grid | No real-time/reaction games |
+| **Frogger** — hop across gifts to reach the tree | No real-time/reaction games |
+| **Sliding Tile** — scrambled tree image, slide tiles to solve | Weak core loop; frustrating journey, satisfaction only at the end |
+| **Fog-of-War Map** — reveal zones, get directional arrows | Weak core loop; tapping for info isn't a loop, overlaps with Tree Finder |
+
 ---
 
 ## Build Order
@@ -151,8 +191,9 @@ Sokoban-style: push ornaments and branches aside to reach the pickle buried unde
 3. ✅ Tree Dungeon (validates navigation UX + reveal animation)
 4. ✅ String of Lights (validates puzzle/rotation UX)
 5. ✅ Branch Pusher
-5. ✅ Pickle Chase
-6. ✅ Press Your Luck
+6. ✅ Pickle Chase
+7. ✅ Press Your Luck
+8. ✅ Excavate
 
 ---
 
