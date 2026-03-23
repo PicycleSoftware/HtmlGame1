@@ -86,7 +86,7 @@ Sokoban-style: push ornaments and branches aside to reach the pickle buried unde
 
 ## Prototype 5 Candidates (pick one to build next)
 
-### ⬜ 5. The Pickle Moves (`pickle-chase`) 🏃
+### ✅ 5. The Pickle Moves (`pickle-chase`) 🏃 — DONE
 **Concept:** Chase mechanic — the pickle migrates one cell per turn along a seeded random walk. It leaves a fading trail showing where it just was. Corner it before it escapes.
 
 **Mechanics:**
@@ -151,6 +151,7 @@ Sokoban-style: push ornaments and branches aside to reach the pickle buried unde
 3. ✅ Tree Dungeon (validates navigation UX + reveal animation)
 4. ✅ String of Lights (validates puzzle/rotation UX)
 5. ✅ Branch Pusher
+5. ✅ Pickle Chase
 6. ✅ Press Your Luck
 
 ---
