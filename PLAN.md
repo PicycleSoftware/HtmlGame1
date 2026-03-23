@@ -69,24 +69,79 @@ Roguelike exploration with fog of war and a slot machine reveal.
 - D-pad controls + tap-to-move + arrow keys
 - Score = moves to reach pickle
 
-### ⬜ 3. String of Lights (`light-strings`) — TODO
+### ✅ 3. String of Lights (`light-strings`) — DONE
 Rotate tile segments to connect Christmas light strings. The pickle hides where all paths meet.
-- Grid of rotatable pieces (straight, corner, T-junction) — tap to rotate 90°
-- 2–3 strings must all connect
+- 5×5 grid of rotatable pieces (straight, corner, T-junction, cross) — tap to rotate 90°
+- 2 sources must connect to 1 sink; win = both sources reach sink via connected pipes
 - Score = rotations used
 
-### ⬜ 4. Branch Pusher (`branch-pusher`) — TODO
+### ✅ 4. Branch Pusher (`branch-pusher`) — DONE
 Sokoban-style: push ornaments and branches aside to reach the pickle buried underneath.
-- Grid ~6×6
-- Tap a block adjacent to player to push it
+- 6×6 grid, 9 pushable blocks, immovable trunk cells
+- Tap a block adjacent to player to push it; walking is free, only pushes cost moves
+- Pickle hidden under one block — revealed instantly when its block is pushed
 - Score = pushes used
 
-### ✅ 6. Ornament Fling (`ornament-fling`) — DONE
-Angry Birds-style drag and fling. Each fling reveals a zone of the tree.
-- Tree silhouette divided into ~12 zones
-- Drag back on ornament, release to fling at a zone
-- Zones have different reveal costs (seeded)
-- Score = flings used
+---
+
+## Prototype 5 Candidates (pick one to build next)
+
+### ⬜ 5. The Pickle Moves (`pickle-chase`) 🏃
+**Concept:** Chase mechanic — the pickle migrates one cell per turn along a seeded random walk. It leaves a fading trail showing where it just was. Corner it before it escapes.
+
+**Mechanics:**
+- Same tree-shaped grid as Tree Finder (~40 cells)
+- Pickle starts at a seeded position, moves to a random adjacent cell after each player turn
+- Player taps any cell to "check" it — costs 1 move
+- If pickle is there: win. If not: cell briefly shows whether the pickle was there recently
+  - 🥒 (bright) = pickle was here last turn
+  - 🥒 (faint) = pickle was here 2 turns ago
+  - Empty = pickle hasn't been here recently
+- Cells return to hidden after checking (old info goes stale)
+- Score = checks used
+- Keyboard: arrow keys move cursor, Enter checks cell
+
+**Seed use:** Starting position + full movement sequence pre-seeded — same chase for everyone that day.
+
+**Excitement factor:** Urgency and pursuit. You can see where it WAS but not where it IS. Commit and chase.
+
+---
+
+### ✅ 6. Press Your Luck (`press-luck`) 🎰 — DONE
+**Concept:** Each cell has a visible seeded "cost" (1–3 moves). You also get a limited supply of hint tokens that eliminate a random non-pickle cell. Classic risk/reward gambling tension.
+
+**Mechanics:**
+- Same tree-shaped grid (~40 cells)
+- Each cell shows its cost upfront: 🟢 = 1 move, 🟡 = 2 moves, 🔴 = 3 moves (seeded)
+- Tapping a cell spends that many moves and reveals if the pickle is there
+- Player starts with 3 hint tokens; each token crossed out one random non-pickle cell for free
+- Score = total moves spent (lower = better)
+- Keyboard: arrow keys navigate, Enter reveals, H uses a hint
+
+**Seed use:** Cell costs seeded. Pickle position seeded. Hint targets seeded (same for everyone).
+
+**Excitement factor:** Gambling tension. A 3-cost cell might be the pickle (jackpot!) or a 3-move waste. Hints are precious — spend them wisely.
+
+---
+
+### ⬜ 7. Excavate (`excavate`) ⛏️
+**Concept:** Each cell has 1–3 hidden layers. Each tap digs one layer deeper and gives a distance hint. Deeper digs cost more but reveal stronger hints. The pickle is buried at the bottom layer of one cell — dig to find it.
+
+**Mechanics:**
+- Same tree-shaped grid (~40 cells)
+- Each cell starts showing its depth as stacked lines (1, 2, or 3 layers) — seeded
+- Tap once: dig layer 1 → reveals hot/cold hint (Very close / Closer / Far / Very far), costs 1 move
+- Tap same cell again: dig layer 2 → tighter hint (Very close / Close only), costs 1 more move
+- Tap again (if 3-layer cell): dig to bottom → reveals contents (ornament emoji or 🥒 pickle), costs 1 more move
+- Pickle is always at the deepest layer of its cell — must dig all the way through to win
+- Score = total taps used
+- Keyboard: arrow keys move cursor, Enter digs
+
+**Visual:** Cells show remaining depth as layered horizontal lines. Dug layers shown lighter/eroded.
+
+**Seed use:** Cell depths seeded. Pickle cell and depth seeded.
+
+**Excitement factor:** Slow excavation builds tension. You know you're getting closer on each layer but can't skip ahead. Efficient players probe shallow across many cells; bold players go deep fast.
 
 ---
 
@@ -94,9 +149,9 @@ Angry Birds-style drag and fling. Each fling reveals a zone of the tree.
 1. ✅ Shared utilities + launcher shell
 2. ✅ Tree Finder (validates daily seed + score system)
 3. ✅ Tree Dungeon (validates navigation UX + reveal animation)
-4. ⬜ String of Lights (validates puzzle/rotation UX)
-5. ⬜ Branch Pusher
-6. ✅ Ornament Fling
+4. ✅ String of Lights (validates puzzle/rotation UX)
+5. ✅ Branch Pusher
+6. ✅ Press Your Luck
 
 ---
 
