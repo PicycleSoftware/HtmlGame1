@@ -143,7 +143,7 @@ Sokoban-style: push ornaments and branches aside to reach the pickle buried unde
 
 **Excitement factor:** Slow excavation builds tension. You know you're getting closer on each layer but can't skip ahead. Efficient players probe shallow across many cells; bold players go deep fast.
 
-### ⬜ 8. Nonogram / Picross (`nonogram`)
+### ✅ 8. Nonogram / Picross (`nonogram`) + v2 idea — DONE
 Fill in rows and columns to reveal the tree image. The pickle's position is encoded in the solution.
 - Classic Picross rules: number clues on rows/columns indicate runs of filled cells
 - Solved grid reveals a tree silhouette with the pickle cell highlighted
@@ -193,7 +193,8 @@ Building blocks that could enhance or combine into prototypes — not strong eno
 5. ✅ Branch Pusher
 6. ✅ Pickle Chase
 7. ✅ Press Your Luck
-8. ✅ Excavate
+8. ✅ Nonogram (Pickle-o-gram)
+9. ✅ Excavate
 
 ---
 

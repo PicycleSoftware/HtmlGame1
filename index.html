@@ -426,6 +426,14 @@ const PROTOTYPES = [
     create: (canvas, seed) => new PressYourLuckGame(canvas, seed),
   },
   {
+    id: 'nonogram',
+    name: 'Pickle-o-gram',
+    icon: '🔢',
+    desc: 'Fill in the Picross grid to reveal a Christmas tree. The pickle hides in one filled cell — find it!',
+    available: true,
+    create: (canvas, seed) => new NonogramGame(canvas, seed),
+  },
+  {
     id: 'excavate',
     name: 'Excavate',
     icon: '⛏️',
@@ -602,7 +610,7 @@ function startGame(proto) {
       const dir = map[e.key];
       if (dir) { e.preventDefault(); currentGame.move(dir[0], dir[1]); return; }
     }
-    if (currentGame.handleKey && (e.key === 'Enter' || e.key === ' ' || e.key === 'h' || e.key === 'H')) {
+    if (currentGame.handleKey && (e.key === 'Enter' || e.key === ' ' || e.key === 'h' || e.key === 'H' || e.key === 'f' || e.key === 'F' || e.key === 'x' || e.key === 'X')) {
       e.preventDefault();
       currentGame.handleKey(e.key);
     }
@@ -2822,6 +2830,332 @@ class ExcavateGame {
     if ((key === 'Enter' || key === ' ') && this.cursorKey) {
       this._dig(this.cursorKey);
     }
+  }
+}
+
+// ============================================================
+// NONOGRAM (PICKLE-O-GRAM)
+// ============================================================
+// Fixed 9×9 Christmas tree pixel image, same every day.
+// Classic Picross rules: row/column number clues indicate runs
+// of filled cells. The pickle hides in one seeded filled cell.
+// Correctly fill that cell → win. Wrong fills flash red & revert.
+// Modes: Fill (✏️) and Cross-out (✕ to mark known-empty cells).
+// Score = wrong taps (errors). Lower = better.
+// ============================================================
+
+// Fixed 9×9 tree image (1=filled, 0=empty) — same every day
+const NONOGRAM_TREE = [
+  [0,0,0,0,1,0,0,0,0],  // row 0: star tip
+  [0,0,0,1,1,1,0,0,0],  // row 1
+  [0,0,1,1,1,1,1,0,0],  // row 2
+  [0,1,1,1,1,1,1,1,0],  // row 3
+  [0,0,1,1,1,1,1,0,0],  // row 4
+  [0,1,1,1,1,1,1,1,0],  // row 5
+  [1,1,1,1,1,1,1,1,1],  // row 6: wide base
+  [0,0,0,1,1,1,0,0,0],  // row 7: trunk
+  [0,0,0,1,1,1,0,0,0],  // row 8: trunk
+];
+
+class NonogramGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.won = false;
+    this.moves = 0;   // errors (wrong taps)
+    this.fillMode = true; // true=fill, false=cross
+
+    this.onScoreUpdate = null;
+    this.onWin = null;
+    this.onControlsChange = null;
+
+    this.ROWS = 9;
+    this.COLS = 9;
+    this.grid = NONOGRAM_TREE;
+
+    this._computeClues();
+
+    // Seed pickle in any filled cell except the star (0,4)
+    const rng = makePRNG(seed ^ 0xD1CE1EAF);
+    const candidates = [];
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        if (this.grid[r][c] && !(r === 0 && c === 4)) candidates.push(`${r},${c}`);
+      }
+    }
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+    this.pickleKey = candidates[0];
+    this.totalCells = candidates.length;
+
+    this.filled  = new Set(); // correctly filled cells
+    this.crossed = new Set(); // X-marked cells
+    this.errorKey   = null;
+    this.errorTimer = null;
+    this.cursorKey  = null;
+  }
+
+  _computeClues() {
+    this.rowClues = this.grid.map(row => {
+      const clues = []; let run = 0;
+      for (const v of row) { if (v) run++; else if (run) { clues.push(run); run = 0; } }
+      if (run) clues.push(run);
+      return clues.length ? clues : [0];
+    });
+    this.colClues = [];
+    for (let c = 0; c < this.COLS; c++) {
+      const clues = []; let run = 0;
+      for (let r = 0; r < this.ROWS; r++) {
+        if (this.grid[r][c]) run++; else if (run) { clues.push(run); run = 0; }
+      }
+      if (run) clues.push(run);
+      this.colClues.push(clues.length ? clues : [0]);
+    }
+    this.maxColClueLen = Math.max(...this.colClues.map(c => c.length));
+    this.maxRowClueLen = Math.max(...this.rowClues.map(r => r.length));
+  }
+
+  resize(w, h) {
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this._computeLayout(w, h);
+    this.render();
+  }
+
+  _computeLayout(w, h) {
+    const legendH = 28;
+    const avH = h - legendH;
+    // Find largest cell size that fits grid + clue areas
+    for (let cs = 56; cs >= 26; cs -= 2) {
+      const fs = Math.max(9, Math.floor(cs * 0.36));
+      const clueColH = this.maxColClueLen * (fs + 3) + 6;
+      const clueRowW = this.maxRowClueLen * (fs * 1.3) + 8;
+      if (clueRowW + this.COLS * cs <= w - 8 &&
+          clueColH + this.ROWS * cs <= avH - 8) {
+        this.cs = cs;
+        this.clueColH = Math.ceil(clueColH);
+        this.clueRowW = Math.ceil(clueRowW);
+        const totalW = this.clueRowW + this.COLS * cs;
+        const totalH = this.clueColH + this.ROWS * cs;
+        this.ox = Math.floor((w - totalW) / 2) + this.clueRowW;
+        this.oy = Math.floor((avH - totalH) / 2) + this.clueColH;
+        this.legendY = h - legendH / 2;
+        return;
+      }
+    }
+    // Fallback minimum
+    this.cs = 26;
+    this.clueColH = 24; this.clueRowW = 24;
+    this.ox = 28; this.oy = 28;
+    this.legendY = h - 14;
+  }
+
+  _isRowComplete(r) {
+    for (let c = 0; c < this.COLS; c++) {
+      if (this.grid[r][c] && !this.filled.has(`${r},${c}`)) return false;
+    }
+    return true;
+  }
+
+  _isColComplete(c) {
+    for (let r = 0; r < this.ROWS; r++) {
+      if (this.grid[r][c] && !this.filled.has(`${r},${c}`)) return false;
+    }
+    return true;
+  }
+
+  render() {
+    const { ctx, canvas, cs, ox, oy } = this;
+    const w = canvas.width, h = canvas.height;
+    const fs = Math.max(9, Math.floor(cs * 0.36));
+
+    ctx.fillStyle = '#0a1a0a';
+    ctx.fillRect(0, 0, w, h);
+
+    // Clue area backgrounds
+    ctx.fillStyle = '#111f11';
+    ctx.fillRect(0, 0, ox, h);                          // left clue strip
+    ctx.fillRect(0, 0, w, oy);                          // top clue strip
+
+    // Column clues (bottom-aligned above grid)
+    ctx.font = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    for (let c = 0; c < this.COLS; c++) {
+      const cx = ox + c * cs + cs / 2;
+      const clues = this.colClues[c];
+      const lineH = fs + 3;
+      const complete = this._isColComplete(c);
+      ctx.fillStyle = complete ? '#6abf6a' : '#aaaaaa';
+      for (let i = 0; i < clues.length; i++) {
+        const ly = oy - (clues.length - 1 - i) * lineH - 5;
+        ctx.fillText(String(clues[i]), cx, ly);
+      }
+    }
+
+    // Row clues (right-aligned left of grid)
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let r = 0; r < this.ROWS; r++) {
+      const cy = oy + r * cs + cs / 2;
+      const clues = this.rowClues[r];
+      const numW = fs * 1.3;
+      const complete = this._isRowComplete(r);
+      ctx.fillStyle = complete ? '#6abf6a' : '#aaaaaa';
+      for (let i = 0; i < clues.length; i++) {
+        const tx = ox - 5 - (clues.length - 1 - i) * numW;
+        ctx.fillText(String(clues[i]), tx, cy);
+      }
+    }
+
+    // Grid cells
+    for (let r = 0; r < this.ROWS; r++) {
+      for (let c = 0; c < this.COLS; c++) {
+        const x = ox + c * cs;
+        const y = oy + r * cs;
+        const key = `${r},${c}`;
+        const isFilled   = this.filled.has(key);
+        const isCrossed  = this.crossed.has(key);
+        const isError    = key === this.errorKey;
+        const isCursor   = key === this.cursorKey && !this.won;
+        const isPickle   = key === this.pickleKey && this.won;
+        const isStar     = r === 0 && c === 4;
+
+        // Background
+        ctx.fillStyle = isError   ? '#881111'
+                      : isFilled  ? '#2a6a1a'
+                      : '#1a2e1a';
+        ctx.fillRect(x + 1, y + 1, cs - 2, cs - 2);
+
+        // Cursor outline
+        if (isCursor) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x + 1, y + 1, cs - 2, cs - 2);
+        }
+
+        // Content
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const cx = x + cs / 2, cy = y + cs / 2;
+        if (isPickle) {
+          ctx.font = `${Math.floor(cs * 0.65)}px serif`;
+          ctx.fillText('🥒', cx, cy);
+        } else if (isStar && isFilled) {
+          ctx.font = `${Math.floor(cs * 0.58)}px serif`;
+          ctx.fillText('⭐', cx, cy);
+        } else if (isCrossed) {
+          ctx.fillStyle = '#cc5555';
+          ctx.font = `bold ${Math.floor(cs * 0.6)}px sans-serif`;
+          ctx.fillText('×', cx, cy);
+        }
+        ctx.restore();
+      }
+    }
+
+    // Grid lines (thicker every 3)
+    for (let r = 0; r <= this.ROWS; r++) {
+      ctx.strokeStyle = r % 3 === 0 ? '#4a8a4a' : '#2a4a2a';
+      ctx.lineWidth   = r % 3 === 0 ? 1.5 : 0.5;
+      ctx.beginPath();
+      ctx.moveTo(ox, oy + r * cs);
+      ctx.lineTo(ox + this.COLS * cs, oy + r * cs);
+      ctx.stroke();
+    }
+    for (let c = 0; c <= this.COLS; c++) {
+      ctx.strokeStyle = c % 3 === 0 ? '#4a8a4a' : '#2a4a2a';
+      ctx.lineWidth   = c % 3 === 0 ? 1.5 : 0.5;
+      ctx.beginPath();
+      ctx.moveTo(ox + c * cs, oy);
+      ctx.lineTo(ox + c * cs, oy + this.ROWS * cs);
+      ctx.stroke();
+    }
+
+    // Legend
+    ctx.save();
+    ctx.font = 'bold 11px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    const modeStr = this.fillMode ? '✏️ Fill  (tap: F)' : '✕ Cross  (tap: X)';
+    ctx.fillStyle = this.fillMode ? '#88cc44' : '#cc8844';
+    ctx.fillText(modeStr, w * 0.35, this.legendY);
+    ctx.fillStyle = '#888888';
+    ctx.fillText(`Errors: ${this.moves}`, w * 0.72, this.legendY);
+    ctx.restore();
+  }
+
+  _flashError(key) {
+    if (this.errorTimer) clearTimeout(this.errorTimer);
+    this.errorKey = key;
+    this.render();
+    this.errorTimer = setTimeout(() => { this.errorKey = null; this.render(); }, 300);
+  }
+
+  _tap(key) {
+    if (this.won) return;
+    const [r, c] = key.split(',').map(Number);
+    if (r < 0 || r >= this.ROWS || c < 0 || c >= this.COLS) return;
+    const cellIsOn = this.grid[r][c] === 1;
+
+    if (this.fillMode) {
+      if (this.filled.has(key)) { this.filled.delete(key); this.render(); return; }
+      if (!cellIsOn) {
+        this.moves++;
+        if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+        this._flashError(key);
+      } else {
+        this.crossed.delete(key);
+        this.filled.add(key);
+        this.render();
+        if (key === this.pickleKey) {
+          this.won = true;
+          this.render();
+          setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 400);
+        }
+      }
+    } else {
+      // Cross mode
+      if (this.crossed.has(key)) { this.crossed.delete(key); this.render(); return; }
+      if (cellIsOn) {
+        this.moves++;
+        if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+        this._flashError(key);
+      } else {
+        this.filled.delete(key);
+        this.crossed.add(key);
+        this.render();
+      }
+    }
+  }
+
+  handleTap(px, py) {
+    const c = Math.floor((px - this.ox) / this.cs);
+    const r = Math.floor((py - this.oy) / this.cs);
+    if (r >= 0 && r < this.ROWS && c >= 0 && c < this.COLS) this._tap(`${r},${c}`);
+  }
+
+  move(dr, dc) {
+    if (this.won) return;
+    if (!this.cursorKey) { this.cursorKey = '4,4'; this.render(); return; }
+    const [r, c] = this.cursorKey.split(',').map(Number);
+    this.cursorKey = `${Math.max(0,Math.min(this.ROWS-1,r+dr))},${Math.max(0,Math.min(this.COLS-1,c+dc))}`;
+    this.render();
+  }
+
+  handleKey(key) {
+    if ((key === 'Enter' || key === ' ') && this.cursorKey) { this._tap(this.cursorKey); return; }
+    if (key === 'f' || key === 'F') { this.fillMode = true;  if (this.onControlsChange) this.onControlsChange(); this.render(); }
+    if (key === 'x' || key === 'X') { this.fillMode = false; if (this.onControlsChange) this.onControlsChange(); this.render(); }
+  }
+
+  getControls() {
+    return [
+      { label: '✏️ Fill',  active:  this.fillMode, action: () => { this.fillMode = true;  if (this.onControlsChange) this.onControlsChange(); this.render(); } },
+      { label: '✕ Cross', active: !this.fillMode, action: () => { this.fillMode = false; if (this.onControlsChange) this.onControlsChange(); this.render(); } },
+    ];
   }
 }
 
