@@ -263,7 +263,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.14</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.15</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -1463,7 +1463,7 @@ class TreeDungeon2Game {
 
     this.visited  = new Set([this.playerKey]);
     this.peeked   = new Set(this._neighbors(this.playerKey));
-    this.revealed = new Set(); // item cells already revealed (show dim icon)
+    this.revealedDist = {}; // item cells already revealed: key → bfs distance
 
     this.totalCells = pickable.length;
   }
@@ -1503,10 +1503,10 @@ class TreeDungeon2Game {
   }
 
   _distLabel(d) {
-    if (d === 1) return 'Very close!';
+    if (d === 1) return 'Very\nclose';
     if (d <= 3)  return 'Closer';
     if (d <= 5)  return 'Far';
-    return 'Very far';
+    return 'Very\nfar';
   }
 
   _distColor(d) {
@@ -1535,7 +1535,7 @@ class TreeDungeon2Game {
       const isPickle = nk === this.pickleKey;
       const d = this.dist[nk] || 0;
       this.animating = true;
-      this.revealed.add(nk);
+      this.revealedDist[nk] = d;
       this._showReveal(isPickle, d, () => {
         this.animating = false;
         if (isPickle) {
@@ -1571,6 +1571,7 @@ class TreeDungeon2Game {
     const confettiCvs  = document.getElementById('confetti-canvas');
 
     card.className    = 'reveal-card' + (isPickle ? ' pickle-mode' : '');
+    card.style.transform = '';
     titleEl.className = 'reveal-title' + (isPickle ? ' pickle-mode' : '');
     titleEl.textContent = 'You found something!';
     nameEl.textContent  = '';
@@ -1583,7 +1584,7 @@ class TreeDungeon2Game {
 
     const landEmoji   = isPickle ? '🥒' : '🔍';
     const pool        = ['🎁','🔔','🕯️','🎅','🦌','⛄','🌟','🧦','🍪','🥛','🎶','❤️','🎈','🌲','⭐','🍬'];
-    const totalSteps  = isPickle ? 104 : 26;
+    const totalSteps  = isPickle ? 78 : 26;
     let step = 0, tickId = null, landed = false, confettiRaf = null;
 
     const getDelay = s => Math.round(22 + 168 * Math.pow(s / totalSteps, 2.2));
@@ -1594,6 +1595,7 @@ class TreeDungeon2Game {
     };
 
     const closeReveal = () => {
+      card.style.transform = '';
       stopConfetti();
       overlay.classList.remove('show');
       onDone();
@@ -1675,10 +1677,15 @@ class TreeDungeon2Game {
     overlay.addEventListener('pointerdown', onSkip);
     window.addEventListener('keydown', onSkip);
 
+    const growStart = Math.floor(totalSteps / 3); // last 2/3 of pickle spin
     const tick = () => {
       step++;
       if (step >= totalSteps) { removeSlotListeners(); land(); return; }
       emojiEl.textContent = step >= totalSteps - 3 ? landEmoji : pool[Math.floor(Math.random() * pool.length)];
+      if (isPickle && step >= growStart) {
+        const t = (step - growStart) / (totalSteps - growStart);
+        card.style.transform = `scale(${(1 + t).toFixed(3)})`;
+      }
       tickId = setTimeout(tick, getDelay(step));
     };
 
@@ -1717,7 +1724,7 @@ class TreeDungeon2Game {
       const isPeeked    = this.peeked.has(key);
       const hasItem     = this.itemCells.has(key);
       const isReachable = currentNeighbors.has(key);
-      const isRevealed  = this.revealed.has(key);
+      const isRevealedClue = (key in this.revealedDist) && key !== this.pickleKey;
 
       ctx.save();
       roundRect(ctx, x + gap, y + gap, cs - gap * 2, cs - gap * 2, 5);
@@ -1726,6 +1733,10 @@ class TreeDungeon2Game {
       } else if (!isVisited) {
         ctx.fillStyle = isTrunk ? '#3a1e0c' : '#1e3d10'; ctx.fill();
         if (isReachable) { ctx.strokeStyle = '#88cc55'; ctx.lineWidth = 2; ctx.stroke(); }
+      } else if (isRevealedClue && !isPlayer) {
+        const col = this._distColor(this.revealedDist[key]);
+        ctx.fillStyle = col + '28'; ctx.fill();
+        ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
       } else {
         ctx.fillStyle = isTrunk ? '#5a3010' : '#2e5a1a'; ctx.fill();
         ctx.strokeStyle = isPlayer ? '#ffd700' : '#3a6a20';
@@ -1747,11 +1758,22 @@ class TreeDungeon2Game {
         if (isPlayer) {
           ctx.font = `${emojiSize}px serif`;
           ctx.fillText('🧒', cx, cy);
-        } else if (isRevealed) {
-          const isPickle = key === this.pickleKey;
-          ctx.globalAlpha = 0.45;
-          ctx.font = `${Math.floor(cs * 0.44)}px serif`;
-          ctx.fillText(isPickle ? '🥒' : '🔍', cx, cy);
+        } else if (key in this.revealedDist) {
+          if (key === this.pickleKey) {
+            ctx.globalAlpha = 0.45;
+            ctx.font = `${Math.floor(cs * 0.44)}px serif`;
+            ctx.fillText('🥒', cx, cy);
+          } else {
+            const d = this.revealedDist[key];
+            const label = this._distLabel(d);
+            const lines = label.split('\n');
+            const fontSize = Math.max(9, Math.floor(cs * 0.2));
+            ctx.font = `bold ${fontSize}px sans-serif`;
+            ctx.fillStyle = this._distColor(d);
+            const lineH = fontSize + 2;
+            const startY = cy - ((lines.length - 1) * lineH) / 2;
+            for (let i = 0; i < lines.length; i++) ctx.fillText(lines[i], cx, startY + i * lineH);
+          }
         }
       }
       ctx.restore();
@@ -1768,7 +1790,7 @@ class TreeDungeon2Game {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#6a8a5a';
     ctx.textAlign = 'center';
-    ctx.fillText('✨ = something hidden   🔍 = distance clue   🧒 = you', this.canvas.width / 2, y);
+    ctx.fillText('✨ = something hidden   🧒 = you   tap or d-pad to move', this.canvas.width / 2, y);
     ctx.restore();
   }
 
