@@ -257,7 +257,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.12</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.13</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -1569,8 +1569,8 @@ class TreeDungeon2Game {
     overlay.classList.add('show');
 
     const landEmoji   = isPickle ? '🥒' : '🔍';
-    const pool        = ['🥒', '🔍'];
-    const totalSteps  = isPickle ? 52 : 26;
+    const pool        = ['🎁','🔔','🕯️','🎅','🦌','⛄','🌟','🧦','🍪','🥛','🎶','❤️','🎈','🌲','⭐','🍬'];
+    const totalSteps  = isPickle ? 104 : 26;
     let step = 0, tickId = null, landed = false, confettiRaf = null;
 
     const getDelay = s => Math.round(22 + 168 * Math.pow(s / totalSteps, 2.2));
