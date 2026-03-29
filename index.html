@@ -189,19 +189,25 @@
       margin-top: 10px;
       min-height: 1.4rem;
     }
-    #dungeon-reveal-btn {
+    .reveal-btn-row {
+      display: flex;
+      gap: 8px;
       margin-top: 20px;
+      width: 100%;
+    }
+    #dungeon-reveal-btn, #dungeon-reveal-play-again {
+      flex: 1;
       background: #6aab3e;
       color: #0f2006;
       border: none;
       border-radius: 10px;
-      padding: 11px 28px;
+      padding: 11px 12px;
       font-size: 1rem;
       font-weight: 700;
       cursor: pointer;
-      width: 100%;
     }
     #dungeon-reveal-btn.pickle-btn { background: #ffd700; color: #1a2a00; }
+    #dungeon-reveal-play-again { background: #243d14; border: 1px solid #3a5e20; color: #a8d08d; }
     #confetti-canvas {
       position: absolute;
       inset: 0;
@@ -257,7 +263,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.13</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.14</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -284,7 +290,10 @@
     <div class="reveal-title" id="dungeon-reveal-title">You found...</div>
     <span id="dungeon-reveal-emoji">🎁</span>
     <div id="dungeon-reveal-name"></div>
-    <button id="dungeon-reveal-btn" style="display:none">🎊 Hooray!</button>
+    <div class="reveal-btn-row">
+      <button id="dungeon-reveal-btn" style="display:none">🎊 Hooray!</button>
+      <button id="dungeon-reveal-play-again" style="display:none">🔀 Play Again</button>
+    </div>
   </div>
 </div>
 
@@ -1150,6 +1159,7 @@ class TreeDungeonGame {
     const emojiEl       = document.getElementById('dungeon-reveal-emoji');
     const nameEl        = document.getElementById('dungeon-reveal-name');
     const btn           = document.getElementById('dungeon-reveal-btn');
+    const playAgainBtn  = document.getElementById('dungeon-reveal-play-again');
     const confettiCvs   = document.getElementById('confetti-canvas');
 
     card.className    = 'reveal-card' + (isPickle ? ' pickle-mode' : '');
@@ -1157,6 +1167,7 @@ class TreeDungeonGame {
     titleEl.textContent = isPickle ? '🎉 You found the Christmas Pickle! 🎉' : 'You found...';
     nameEl.textContent = '';
     btn.style.display = 'none';
+    playAgainBtn.style.display = 'none';
     btn.className = isPickle ? 'pickle-btn' : '';
     emojiEl.className = '';
     confettiCvs.style.display = 'none';
@@ -1550,19 +1561,21 @@ class TreeDungeon2Game {
   }
 
   _showReveal(isPickle, dist, onDone) {
-    const overlay    = document.getElementById('dungeon-reveal-overlay');
-    const card       = document.getElementById('reveal-card');
-    const titleEl    = document.getElementById('dungeon-reveal-title');
-    const emojiEl    = document.getElementById('dungeon-reveal-emoji');
-    const nameEl     = document.getElementById('dungeon-reveal-name');
-    const btn        = document.getElementById('dungeon-reveal-btn');
-    const confettiCvs = document.getElementById('confetti-canvas');
+    const overlay      = document.getElementById('dungeon-reveal-overlay');
+    const card         = document.getElementById('reveal-card');
+    const titleEl      = document.getElementById('dungeon-reveal-title');
+    const emojiEl      = document.getElementById('dungeon-reveal-emoji');
+    const nameEl       = document.getElementById('dungeon-reveal-name');
+    const btn          = document.getElementById('dungeon-reveal-btn');
+    const playAgainBtn = document.getElementById('dungeon-reveal-play-again');
+    const confettiCvs  = document.getElementById('confetti-canvas');
 
     card.className    = 'reveal-card' + (isPickle ? ' pickle-mode' : '');
     titleEl.className = 'reveal-title' + (isPickle ? ' pickle-mode' : '');
     titleEl.textContent = 'You found something!';
     nameEl.textContent  = '';
     btn.style.display   = 'none';
+    playAgainBtn.style.display = 'none';
     btn.className       = isPickle ? 'pickle-btn' : '';
     emojiEl.className   = '';
     confettiCvs.style.display = 'none';
@@ -1631,6 +1644,14 @@ class TreeDungeon2Game {
         startConfetti();
         btn.style.display = '';
         btn.onclick = () => closeReveal();
+        playAgainBtn.style.display = '';
+        playAgainBtn.onclick = () => {
+          this.onWin = null; // prevent win overlay from appearing after closeReveal triggers onDone
+          closeReveal();
+          const proto = PROTOTYPES.find(p => p.id === 'tree-dungeon-2');
+          const freshSeed = (Date.now() ^ 0xF00DCAFE) >>> 0;
+          startGame(proto, freshSeed);
+        };
       } else {
         const label = this._distLabel(dist);
         const color = this._distColor(dist);
