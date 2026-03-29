@@ -263,7 +263,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.15</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.16</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -1571,9 +1571,9 @@ class TreeDungeon2Game {
     const confettiCvs  = document.getElementById('confetti-canvas');
 
     card.className    = 'reveal-card' + (isPickle ? ' pickle-mode' : '');
-    card.style.transform = '';
+    card.style.transform = 'scale(0.8)';
     titleEl.className = 'reveal-title' + (isPickle ? ' pickle-mode' : '');
-    titleEl.textContent = 'You found something!';
+    titleEl.textContent = isPickle ? 'You found something!' : 'You found a clue!';
     nameEl.textContent  = '';
     btn.style.display   = 'none';
     playAgainBtn.style.display = 'none';
@@ -1595,9 +1595,10 @@ class TreeDungeon2Game {
     };
 
     const closeReveal = () => {
-      card.style.transform = '';
+      card.style.transform = 'scale(0.8)';
       stopConfetti();
       overlay.classList.remove('show');
+      card.style.transform = '';
       onDone();
     };
 
@@ -1634,7 +1635,6 @@ class TreeDungeon2Game {
       if (landed) return;
       landed = true;
       if (tickId) { clearTimeout(tickId); tickId = null; }
-      removeSlotListeners();
 
       emojiEl.textContent = landEmoji;
       void emojiEl.offsetWidth;
@@ -1669,22 +1669,14 @@ class TreeDungeon2Game {
       }
     };
 
-    const onSkip = (e) => { e.stopPropagation(); land(); };
-    const removeSlotListeners = () => {
-      overlay.removeEventListener('pointerdown', onSkip);
-      window.removeEventListener('keydown', onSkip);
-    };
-    overlay.addEventListener('pointerdown', onSkip);
-    window.addEventListener('keydown', onSkip);
-
-    const growStart = Math.floor(totalSteps / 3); // last 2/3 of pickle spin
+    const growStart = Math.floor(totalSteps / 2); // last half of pickle spin
     const tick = () => {
       step++;
-      if (step >= totalSteps) { removeSlotListeners(); land(); return; }
+      if (step >= totalSteps) { land(); return; }
       emojiEl.textContent = step >= totalSteps - 3 ? landEmoji : pool[Math.floor(Math.random() * pool.length)];
       if (isPickle && step >= growStart) {
         const t = (step - growStart) / (totalSteps - growStart);
-        card.style.transform = `scale(${(1 + t).toFixed(3)})`;
+        card.style.transform = `scale(${(0.8 + 0.8 * t).toFixed(3)})`;
       }
       tickId = setTimeout(tick, getDelay(step));
     };
@@ -1696,12 +1688,13 @@ class TreeDungeon2Game {
   resize(w, h) {
     this.canvas.width  = w;
     this.canvas.height = h;
-    const pad  = 12;
+    const pad = 12;
+    const topBarH = 24;
     const cellW = (w - pad * 2) / this.COLS;
-    const cellH = (h - pad * 2) / this.ROWS;
+    const cellH = (h - pad - topBarH) / this.ROWS;
     this.cs = Math.floor(Math.min(cellW, cellH, 64));
     this.ox = Math.floor((w - this.cs * this.COLS) / 2);
-    this.oy = Math.floor((h - this.cs * this.ROWS) / 2);
+    this.oy = topBarH + Math.floor((h - topBarH - pad - this.cs * this.ROWS) / 2);
     this.render();
   }
 
@@ -1711,6 +1704,20 @@ class TreeDungeon2Game {
 
     ctx.fillStyle = '#0f1a07';
     ctx.fillRect(0, 0, w, h);
+
+    // Current-cell hint label above grid
+    if (this.playerKey in this.revealedDist && this.playerKey !== this.pickleKey) {
+      const d = this.revealedDist[this.playerKey];
+      const label = this._distLabel(d).replace('\n', ' ');
+      const color = this._distColor(d);
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = color;
+      ctx.fillText(`Currently: ${label}`, w / 2, 12);
+      ctx.restore();
+    }
 
     const currentNeighbors = new Set(this._neighbors(this.playerKey));
 
