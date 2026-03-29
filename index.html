@@ -441,6 +441,14 @@ const PROTOTYPES = [
     available: true,
     create: (canvas, seed) => new ExcavateGame(canvas, seed),
   },
+  {
+    id: 'tree-finder-2',
+    name: 'Tree Finder 2',
+    icon: '🎁',
+    desc: 'Hot/cold search with hint presents under the tree. Open a present for a directional clue — but it costs moves.',
+    available: true,
+    create: (canvas, seed) => new TreeFinder2Game(canvas, seed),
+  },
 ];
 
 // ============================================================
@@ -3156,6 +3164,453 @@ class NonogramGame {
       { label: '✏️ Fill',  active:  this.fillMode, action: () => { this.fillMode = true;  if (this.onControlsChange) this.onControlsChange(); this.render(); } },
       { label: '✕ Cross', active: !this.fillMode, action: () => { this.fillMode = false; if (this.onControlsChange) this.onControlsChange(); this.render(); } },
     ];
+  }
+}
+
+// ============================================================
+// PROTOTYPE: TREE FINDER 2
+// ============================================================
+// Same hot/cold grid as Tree Finder, but with 3 hint presents
+// under the tree. Each present gives a directional clue when
+// opened, at escalating move costs (2, 4, 6).
+// Each reveal plays a growing slot-machine window animation.
+// ============================================================
+
+class TreeFinder2Game {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.seed = seed ^ 0xCAFEBABE;
+    this.moves = 0;
+    this.won = false;
+    this.animating = false;
+
+    this.onScoreUpdate = null;
+    this.onWin = null;
+    this.onControlsChange = null;
+
+    this.COLS = 9;
+    this.ROWS = 8;
+    this._buildTree();
+
+    const rng = makePRNG(this.seed);
+    const pickable = [...this.treeCells].filter(k => {
+      const r = parseInt(k);
+      return r > 0 && r < this.ROWS - 1;
+    });
+    for (let i = pickable.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pickable[i], pickable[j]] = [pickable[j], pickable[i]];
+    }
+    this.pickleKey = pickable[0];
+
+    this.cellState = {};
+    for (const k of this.treeCells) this.cellState[k] = 'hidden';
+    this.starKey = `0,${Math.floor(this.COLS / 2)}`;
+    this.cellState[this.starKey] = 'revealed';
+    this.totalCells = pickable.length;
+    this._computeDistances();
+
+    // 3 hint presents: different colours, escalating costs
+    this.presents = [
+      {
+        id: 0, cost: 2,
+        boxColor: '#b52020', ribColor: '#ff6666',
+        label: 'Left / Right',
+        opened: false, hint: null,
+        spin: ['⬅️','➡️'],
+        getHint: () => {
+          const c = parseInt(this.pickleKey.split(',')[1]);
+          return c < 4 ? { icon: '⬅️', text: 'Left side' }
+               : c > 4 ? { icon: '➡️', text: 'Right side' }
+               :          { icon: '↕️', text: 'Center column' };
+        },
+      },
+      {
+        id: 1, cost: 4,
+        boxColor: '#8a6000', ribColor: '#ffd700',
+        label: 'Upper / Lower',
+        opened: false, hint: null,
+        spin: ['⬆️','⬇️'],
+        getHint: () => {
+          const r = parseInt(this.pickleKey.split(',')[0]);
+          return r < 4 ? { icon: '⬆️', text: 'Upper half' }
+                       : { icon: '⬇️', text: 'Lower half' };
+        },
+      },
+      {
+        id: 2, cost: 6,
+        boxColor: '#1a4a90', ribColor: '#66aaff',
+        label: 'Tips / Center',
+        opened: false, hint: null,
+        spin: ['🌿','🪵'],
+        getHint: () => {
+          const c = parseInt(this.pickleKey.split(',')[1]);
+          return Math.abs(c - 4) >= 2 ? { icon: '🌿', text: 'Branch tips' }
+                                       : { icon: '🪵', text: 'Near center' };
+        },
+      },
+    ];
+
+    this.slotAnim = null; // active animation state or null
+  }
+
+  _buildTree() {
+    const ranges = [[4,4],[3,5],[2,6],[1,7],[2,6],[1,7],[0,8],[3,5]];
+    this.treeCells = new Set();
+    for (let r = 0; r < this.ROWS; r++) {
+      const [lo, hi] = ranges[r];
+      for (let c = lo; c <= hi; c++) this.treeCells.add(`${r},${c}`);
+    }
+  }
+
+  _computeDistances() {
+    this.dist = {};
+    const queue = [this.pickleKey];
+    this.dist[this.pickleKey] = 0;
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+    while (queue.length) {
+      const cur = queue.shift();
+      const [r, c] = cur.split(',').map(Number);
+      for (const [dr, dc] of dirs) {
+        const nk = `${r+dr},${c+dc}`;
+        if (this.treeCells.has(nk) && !(nk in this.dist)) {
+          this.dist[nk] = this.dist[cur] + 1;
+          queue.push(nk);
+        }
+      }
+    }
+  }
+
+  _distColor(d) {
+    const c = ['#ff2222','#ff6600','#ffaa00','#ccdd00','#66cc44','#44aadd','#4477ff'];
+    return c[Math.min(d - 1, c.length - 1)];
+  }
+
+  _distLabel(d) {
+    if (d === 1) return 'Very\nclose';
+    if (d <= 3)  return 'Closer';
+    if (d <= 5)  return 'Far';
+    return 'Very\nfar';
+  }
+
+  resize(w, h) {
+    this.canvas.width = w;
+    this.canvas.height = h;
+    this.presentAreaH = Math.max(68, Math.floor(h * 0.14));
+    this.legendH = 24;
+    const usableH = h - this.presentAreaH - this.legendH;
+    const padX = 12, padY = 8;
+    const cellW = (w - padX * 2) / this.COLS;
+    const cellH = (usableH - padY * 2) / this.ROWS;
+    this.cs = Math.floor(Math.min(cellW, cellH, 60));
+    this.ox = Math.floor((w - this.cs * this.COLS) / 2);
+    this.oy = Math.floor((usableH - this.cs * this.ROWS) / 2) + padY;
+    this.presentY = this.oy + this.cs * this.ROWS + 6;
+    this.legendY = h - this.legendH / 2;
+    this._layoutPresentRects(w);
+    this.render();
+  }
+
+  _layoutPresentRects(w) {
+    const pH = this.presentAreaH - 10;
+    const pW = Math.min(Math.floor((w - 48) / 3), 88);
+    const totalW = pW * 3 + 24;
+    const startX = Math.floor((w - totalW) / 2);
+    this.presentRects = this.presents.map((_, i) => ({
+      x: startX + i * (pW + 12),
+      y: this.presentY,
+      w: pW,
+      h: pH,
+    }));
+  }
+
+  render() {
+    const { ctx, canvas } = this;
+    ctx.fillStyle = '#1a3a0a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    this._drawTree();
+    this._drawPresents();
+    this._drawLegend();
+    if (this.slotAnim) this._drawSlot();
+  }
+
+  _drawTree() {
+    const { ctx, cs, ox, oy } = this;
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      const x = ox + c * cs, y = oy + r * cs;
+      const gap = 3;
+      const state = this.cellState[key];
+      const isPickle = key === this.pickleKey;
+      const isTrunk = r === this.ROWS - 1;
+      const isStar = key === this.starKey;
+
+      ctx.save();
+      roundRect(ctx, x+gap, y+gap, cs-gap*2, cs-gap*2, 5);
+      if (state === 'hidden') {
+        ctx.fillStyle = isTrunk ? '#5a3010' : '#2e5a1a';
+        ctx.fill();
+        ctx.strokeStyle = isTrunk ? '#6a3a18' : '#3a7020';
+        ctx.lineWidth = 1; ctx.stroke();
+      } else if (state === 'revealed') {
+        if (isPickle) {
+          ctx.fillStyle = '#1a3a0a'; ctx.fill();
+          ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3; ctx.stroke();
+        } else if (isStar) {
+          ctx.fillStyle = '#2e5a1a'; ctx.fill();
+        } else {
+          const d = this.dist[key];
+          const col = this._distColor(d);
+          ctx.fillStyle = col + '28'; ctx.fill();
+          ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+        }
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const cx = x + cs/2, cy = y + cs/2;
+      if (isStar && state === 'revealed') {
+        ctx.font = `${Math.floor(cs*0.6)}px serif`;
+        ctx.fillText('⭐', cx, cy);
+      } else if (state === 'hidden') {
+        if (isTrunk) {
+          ctx.fillStyle = '#8b5e3c';
+          ctx.fillRect(cx-cs*0.14, y+gap+3, cs*0.28, cs-gap*2-6);
+        } else if ((r+c)%3===1) {
+          ctx.globalAlpha = 0.45;
+          const orns = ['🔴','🟡','🔵','🟢'];
+          ctx.font = `${Math.floor(cs*0.38)}px serif`;
+          ctx.fillText(orns[(r*9+c)%orns.length], cx, cy);
+        }
+      } else if (state === 'revealed' && !isStar) {
+        if (isPickle) {
+          ctx.font = `${Math.floor(cs*0.65)}px serif`;
+          ctx.fillText('🥒', cx, cy);
+        } else {
+          const d = this.dist[key];
+          const lines = this._distLabel(d).split('\n');
+          const fs = Math.max(9, Math.floor(cs*0.2));
+          ctx.font = `bold ${fs}px sans-serif`;
+          ctx.fillStyle = this._distColor(d);
+          const lh = fs+2, sy = cy - ((lines.length-1)*lh)/2;
+          lines.forEach((l, i) => ctx.fillText(l, cx, sy + i*lh));
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  _drawPresents() {
+    const { ctx } = this;
+    this.presents.forEach((p, i) => {
+      const r = this.presentRects[i];
+      if (!r) return;
+      const { x, y, w, h } = r;
+      const cx = x + w/2, cy = y + h/2;
+
+      // Box
+      ctx.save();
+      roundRect(ctx, x, y, w, h, 7);
+      ctx.fillStyle = p.opened ? p.boxColor + '44' : p.boxColor;
+      ctx.fill();
+      ctx.strokeStyle = p.ribColor + (p.opened ? '66' : 'cc');
+      ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+
+      if (!p.opened) {
+        // Ribbon cross
+        ctx.save();
+        ctx.strokeStyle = p.ribColor; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.moveTo(cx, y); ctx.lineTo(cx, y+h); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y+h*0.42); ctx.lineTo(x+w, y+h*0.42); ctx.stroke();
+        // Bow loops
+        ctx.fillStyle = p.ribColor;
+        ctx.beginPath(); ctx.ellipse(cx-6, y+5, 6, 4, -0.35, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(cx+6, y+5, 6, 4,  0.35, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+        // Cost label
+        ctx.save();
+        ctx.font = `bold ${Math.max(10, Math.floor(h*0.2))}px sans-serif`;
+        ctx.fillStyle = '#ffffffdd';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText(`${p.cost} moves`, cx, y+h-4);
+        ctx.restore();
+        // Present icon
+        ctx.save();
+        ctx.font = `${Math.floor(h*0.36)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🎁', cx, y+h*0.4);
+        ctx.restore();
+      } else {
+        // Opened: show hint result
+        ctx.save();
+        ctx.font = `${Math.floor(h*0.38)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(p.hint.icon, cx, y+h*0.38);
+        ctx.font = `bold ${Math.max(9, Math.floor(h*0.17))}px sans-serif`;
+        ctx.fillStyle = p.ribColor;
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(p.hint.text, cx, y+h-5);
+        ctx.restore();
+      }
+    });
+  }
+
+  _drawLegend() {
+    const ctx = this.ctx;
+    const y = this.legendY;
+    const items = [{label:'Very close',d:1},{label:'Closer',d:2},{label:'Far',d:4},{label:'Very far',d:6}];
+    ctx.save();
+    ctx.font = 'bold 10px sans-serif'; ctx.textBaseline = 'middle';
+    const totalW = items.length * 72;
+    let x = Math.floor((this.canvas.width - totalW) / 2);
+    for (const it of items) {
+      ctx.fillStyle = this._distColor(it.d);
+      ctx.fillText(it.label, x, y);
+      x += 72;
+    }
+    ctx.restore();
+  }
+
+  // ---- Slot machine animation ----
+  _drawSlot() {
+    const { ctx, canvas, slotAnim: sa } = this;
+    const w = canvas.width, h = canvas.height;
+    const elapsed = Date.now() - sa.startTime;
+
+    // Window grows from small to full during first 40% of spin
+    const growT = Math.min(1, elapsed / (sa.totalMs * 0.4));
+    const ease  = 1 - Math.pow(1 - growT, 3);
+    const maxW  = Math.min(250, w - 40);
+    const maxH  = 108;
+    const winW  = 56 + (maxW - 56) * ease;
+    const winH  = 36 + (maxH - 36) * ease;
+    const winX  = (w - winW) / 2;
+    const winY  = (h - winH) / 2 - 10;
+
+    // Dimmed backdrop
+    ctx.fillStyle = `rgba(0,0,0,${0.65 * ease})`;
+    ctx.fillRect(0, 0, w, h);
+
+    // Window frame
+    ctx.save();
+    roundRect(ctx, winX, winY, winW, winH, 12);
+    ctx.fillStyle = '#162e0c'; ctx.fill();
+    ctx.strokeStyle = sa.p.ribColor; ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+
+    // Clip to window interior
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, winX+3, winY+3, winW-6, winH-6, 9);
+    ctx.clip();
+
+    const landed = elapsed >= sa.totalMs;
+    if (landed) {
+      // Bounce scale
+      const t2 = elapsed - sa.totalMs;
+      const bounce = Math.sin(t2 / 70) * Math.exp(-t2 / 220) * 0.28;
+      const sc = 1 + Math.max(0, bounce);
+      ctx.save();
+      ctx.translate(winX + winW/2, winY + winH*0.44);
+      ctx.scale(sc, sc);
+      ctx.font = `${Math.floor(winH * 0.42)}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(sa.p.hint.icon, 0, -winH*0.04);
+      ctx.font = `bold ${Math.max(11, Math.floor(winH*0.2))}px sans-serif`;
+      ctx.fillStyle = sa.p.ribColor;
+      ctx.fillText(sa.p.hint.text, 0, winH*0.33);
+      ctx.restore();
+      if (t2 > 300) {
+        ctx.font = `${Math.max(10, Math.floor(winH*0.15))}px sans-serif`;
+        ctx.fillStyle = '#a8d08d99';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText('Tap to continue', winX + winW/2, winY + winH - 4);
+      }
+    } else {
+      // Spinning symbols — speed decelerates toward end
+      const spinFrac = elapsed / sa.totalMs;
+      const cycleMs = 55 + spinFrac * spinFrac * 320; // slows down
+      const allSyms = ['⬅️','➡️','⬆️','⬇️','🌿','🪵','🎁','❓','⭐'];
+      const idx = Math.floor(elapsed / cycleMs) % allSyms.length;
+      ctx.font = `${Math.floor(winH * 0.45)}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(allSyms[idx], winX + winW/2, winY + winH*0.42);
+      if (winH > 52) {
+        ctx.font = `${Math.max(10, Math.floor(winH*0.17))}px sans-serif`;
+        ctx.fillStyle = sa.p.ribColor + 'bb';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('Opening…', winX + winW/2, winY + winH - 5);
+      }
+    }
+    ctx.restore(); // unclip
+
+    if (!landed || (Date.now() - sa.startTime - sa.totalMs) < 1200) {
+      requestAnimationFrame(() => { if (this.slotAnim) this.render(); });
+    } else {
+      // Done — mark present opened, clear anim
+      sa.p.opened = true;
+      this.slotAnim = null;
+      this.animating = false;
+      this.render();
+    }
+  }
+
+  handleTap(px, py) {
+    if (this.won) return;
+
+    // Dismiss slot machine on tap after landing
+    if (this.slotAnim) {
+      if (Date.now() - this.slotAnim.startTime >= this.slotAnim.totalMs) {
+        this.slotAnim.p.opened = true;
+        this.slotAnim = null;
+        this.animating = false;
+        this.render();
+      }
+      return;
+    }
+
+    // Present taps
+    for (let i = 0; i < this.presents.length; i++) {
+      const p = this.presents[i];
+      const rc = this.presentRects[i];
+      if (!rc || p.opened) continue;
+      if (px >= rc.x && px <= rc.x+rc.w && py >= rc.y && py <= rc.y+rc.h) {
+        this._openPresent(p);
+        return;
+      }
+    }
+
+    // Tree cell taps
+    if (this.animating) return;
+    const c = Math.floor((px - this.ox) / this.cs);
+    const r = Math.floor((py - this.oy) / this.cs);
+    const key = `${r},${c}`;
+    if (!this.treeCells.has(key) || this.cellState[key] !== 'hidden') return;
+
+    this.cellState[key] = 'revealed';
+    this.moves++;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+
+    if (key === this.pickleKey) {
+      this.won = true;
+      this.render();
+      setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 350);
+    } else {
+      this.render();
+    }
+  }
+
+  _openPresent(p) {
+    if (p.opened || this.animating) return;
+    this.animating = true;
+    this.moves += p.cost;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+    p.hint = p.getHint();
+    this.slotAnim = { p, startTime: Date.now(), totalMs: 1300 };
+    this.render();
   }
 }
 

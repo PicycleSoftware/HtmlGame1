@@ -149,13 +149,45 @@ Fill in rows and columns to reveal the tree image. The pickle's position is enco
 - Solved grid reveals a tree silhouette with the pickle cell highlighted
 - Score = incorrect cells filled (errors)
 
-### ⬜ 9. House Exploration (`house-explore`)
+### ✅ 9. Tree Finder 2 (`tree-finder-2`) — DONE
+Same hot/cold grid as Tree Finder with hint presents under the tree.
+- Same 9×8 tree-shaped grid (~40 cells)
+- 3 gift presents below the tree, each different colour (red / gold / blue)
+- Opening a present reveals a directional hint via slot-machine animation (window grows as symbols spin, decelerates to result with bounce)
+- Present costs: 2 / 4 / 6 moves (escalating — opening a present spends moves)
+- Hint types: Left vs. Right half · Upper vs. Lower half · Branch tips vs. Near center
+- Strategy: open presents for guaranteed intel vs. spend moves searching directly
+- No flag mode (cleaner UX; presents replace the intel-gathering role)
+- Score = total moves (cell taps + present costs)
+
+### ⬜ 10. Lottery Scratcher (`scratcher`)
+**Concept:** Classic lottery scratcher on the Christmas tree. Scratch cells to reveal what's underneath — some are instant prizes, some give clues, one hides the pickle.
+
+**Mechanics:**
+- Tree-shaped grid, same shape as Tree Finder
+- Each hidden cell has a seeded type: empty, prize, clue, or pickle
+- Tap/scratch to reveal — each scratch costs 1 move
+- Prize cells give something useful: +3 moves back, a directional clue, or a free reveal of a nearby cell
+- Clue cells show a distance label (like Tree Finder) — cheaper intelligence
+- Pickle cell triggers win with slot machine celebration
+- Matching mechanic idea: find 2-of-a-kind or 3-of-a-kind of certain ornament symbols to earn a bonus reward
+- Score = scratches used before finding pickle (prize refunds count)
+
+**Why it's interesting:**
+- Each scratch has variable value — resource management between safe info-gathering (clue cells) and gambling for prizes
+- The matching mechanic adds a secondary goal that rewards thorough exploration
+- Slot machine reveal vocabulary (already proven in Tree Dungeon) fits lottery aesthetic perfectly
+- Prize economy creates decisions: use the bonus now or bank it?
+
+**Seed use:** All cell types seeded. Matching symbols seeded. Prize values seeded.
+
+### ⬜ 11. House Exploration (`house-explore`)
 Top-down RPG (Link's Awakening style). Walk through rooms of the house on Christmas Eve, talk to NPCs for clues, find the pickle hidden somewhere in the tree room.
 - Grid-based movement, multiple rooms
 - NPCs give directional or hot/cold clues
 - Score = steps taken
 
-### ⬜ 10. Metroidvania Tree (`metroidvania`)
+### ⬜ 12. Metroidvania Tree (`metroidvania`)
 Side-scrolling tree with locked branches. Find key ornaments to unlock new sections and eventually reach the pickle.
 - Left/right/up/down movement across branches
 - Certain paths blocked until player finds matching key ornament
@@ -195,6 +227,7 @@ Building blocks that could enhance or combine into prototypes — not strong eno
 7. ✅ Press Your Luck
 8. ✅ Nonogram (Pickle-o-gram)
 9. ✅ Excavate
+10. ✅ Tree Finder 2
 
 ---
 
