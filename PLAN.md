@@ -188,13 +188,71 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Seed use:** All cell types seeded. Matching symbols seeded. Prize values seeded.
 
-### ⬜ 11. House Exploration (`house-explore`)
+### ⬜ 11. Ornament Parking Jam (`ornament-jam`)
+**Concept:** Rush Hour / parking jam with Christmas ornaments. A grid of ornaments blocks the pickle ornament. Slide ornaments along rows and columns to clear a path and get the pickle to the exit.
+
+**Mechanics:**
+- Grid of ornaments (round, horizontal, vertical), each occupying 1–3 cells
+- Ornaments slide freely along their axis until blocked — tap and drag to move
+- Pickle ornament must reach the exit (edge of the grid)
+- Seeded daily puzzle — same arrangement for everyone
+- Score = number of moves (slides) used
+- One-finger drag to slide; tap shows valid slide directions
+
+**Why it's interesting:**
+- Rush Hour is a proven, universally understood mechanic — zero learning curve
+- Physical metaphor maps perfectly: ornaments hanging on branches, push them aside to reveal the hidden pickle
+- Spatial reasoning without time pressure — ideal for all ages
+- Satisfying "click" moment when the path clears and the pickle slides out
+
+**Seed use:** Ornament positions, sizes, and orientations seeded. Pickle start position and exit seeded.
+
+### ⬜ 12. Shake the Tree (`shake-tree`)
+**Concept:** Swipe branches to shift ornaments; they slowly settle back. The pickle is buried under layered ornaments — only visible and tappable when you've cleared enough of the right area.
+
+**Mechanics:**
+- Tree-shaped play area packed with overlapping ornaments
+- Swipe across a region to shift ornaments within it; they drift back to resting positions after a short delay
+- Wide swipe displaces more ornaments but they settle back faster; precise swipe clears a smaller area but holds longer
+- Pickle is hidden under layered ornaments — tap it to win when exposed
+- Score = number of swipes used
+
+**Why it's interesting:**
+- Theme and mechanic are the same act — shaking things to find what's hidden is literally how you'd search a real Christmas tree
+- Decision at every step: broad search vs. precise commit
+- Tactile, physical feel; no gamer vocabulary required
+
+**Seed use:** Pickle position and ornament layout seeded. Same shake sequence for everyone.
+
+**Source:** Mechanic combination #103 (Area of Effect + Swipe to Move), rated A by Meier pass, Casual-Friendly by accessibility pass.
+
+### ⬜ 13. Part the Branches (`part-branches`)
+**Concept:** Drag vertical strips of tree branches left and right to open sightlines into the tree interior. The pickle is hidden inside — tap it when you've parted the right columns.
+
+**Mechanics:**
+- Tree rendered as layered vertical columns of overlapping branches
+- Drag a column left or right to open a gap; adjacent columns partially block each other
+- Pickle is in the interior — only tappable when a clear sightline exists through the right set of columns simultaneously
+- Score = number of column drags used
+
+**Why it's interesting:**
+- Sightline logic maps naturally to peering into a dense tree
+- Decision: which gap do you need, and what does creating it cost in adjacent columns?
+- Physical metaphor is strong and requires no explanation
+
+**Risk:** Underlying slider puzzle structure may trigger non-gamer resistance — validate with paper prototype before building.
+
+**Seed use:** Pickle depth and position seeded. Column layout seeded.
+
+**Source:** Mechanic combination #70 (Column Shifting + Drag to Slot), rated A by Meier pass, Casual-Friendly by accessibility pass.
+
+### ⬜ 14. House Exploration (`house-explore`)
 Top-down RPG (Link's Awakening style). Walk through rooms of the house on Christmas Eve, talk to NPCs for clues, find the pickle hidden somewhere in the tree room.
 - Grid-based movement, multiple rooms
 - NPCs give directional or hot/cold clues
 - Score = steps taken
 
-### ⬜ 12. Metroidvania Tree (`metroidvania`)
+### ⬜ 15. Metroidvania Tree (`metroidvania`)
 Side-scrolling tree with locked branches. Find key ornaments to unlock new sections and eventually reach the pickle.
 - Left/right/up/down movement across branches
 - Certain paths blocked until player finds matching key ornament
@@ -208,6 +266,37 @@ Building blocks that could enhance or combine into prototypes — not strong eno
 - **Pickle Reassembly** — pickle shattered and pieces are hidden around the tree. Finding each piece snaps it visibly onto a pickle outline. Good for: making progress feel cumulative and visible; could layer onto any exploration game.
 - **Pickle Growth** — a pickle seed is planted somewhere; "watering" nearby zones shows organic growth as feedback. Good for: a more alive/tactile alternative to hot/cold distance labels.
 - **Pickle Crafting** — ingredients (cucumber, dill, vinegar, salt) scattered across the tree/house, each behind a mini-puzzle. Combine to create the pickle. Good for: a ceremony/payoff moment; multi-stage structure.
+
+---
+
+## Mechanic Catalogue Process
+
+A 3-part process to find new prototype ideas from well-known base mechanics. Run each part as a separate session.
+
+### Part 1 — Catalogue (agents)
+Run 2–3 research agents independently, each from a different design perspective:
+- **Raph Koster** — game atoms, fundamental mechanic primitives
+- **Zach Gage** — casual/mobile mechanics, accessible puzzle loops
+- **Mark Brown** (GMTK) — puzzle mechanics, player verbs
+
+Each agent produces a flat list of ~30–50 base mechanics: name, one-line description, canonical example game. **No Christmas Pickle filtering** — pure retrieval, no constraints applied.
+
+Output file: `mechanic-catalogue.md`
+
+### Part 2 — Combine (Chas + Claude)
+Go through the catalogue together, deduplicate, and look for interesting combinations or stretches. This is the creative step — not delegated to agents. Flag anything worth exploring.
+
+Output: a shortlist of combinations worth filtering.
+
+### Part 3 — Filter (Chas + Claude, or agents)
+Run the shortlist against the Christmas Pickle constraints:
+- Turn-based, no time pressure
+- One-finger, touch-friendly
+- 2–5 minutes
+- Ages 10–70, half non-gamers
+- Daily fixed puzzle, shareable score
+
+Decide what to add to the prototype queue.
 
 ---
 
