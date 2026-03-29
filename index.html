@@ -86,6 +86,8 @@
       gap: 10px;
       border-bottom: 2px solid #3a5e20;
       flex-shrink: 0;
+      position: relative;
+      z-index: 10;
     }
     #btn-back {
       background: none;
@@ -263,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.16</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.17</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -1504,7 +1506,8 @@ class TreeDungeon2Game {
 
   _distLabel(d) {
     if (d === 1) return 'Very\nclose';
-    if (d <= 3)  return 'Closer';
+    if (d === 2) return 'Closer';
+    if (d === 3) return 'Kinda\nclose';
     if (d <= 5)  return 'Far';
     return 'Very\nfar';
   }
@@ -1534,14 +1537,16 @@ class TreeDungeon2Game {
     if (isNewVisit && this.itemCells.has(nk)) {
       const isPickle = nk === this.pickleKey;
       const d = this.dist[nk] || 0;
-      this.animating = true;
       this.revealedDist[nk] = d;
+      this.animating = true;
       this._showReveal(isPickle, d, () => {
         this.animating = false;
         if (isPickle) {
           this.won = true;
           this.render();
           setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 200);
+        } else {
+          this.render(); // show "Currently: X" label now that reveal is done
         }
       });
     }
@@ -1676,7 +1681,7 @@ class TreeDungeon2Game {
       emojiEl.textContent = step >= totalSteps - 3 ? landEmoji : pool[Math.floor(Math.random() * pool.length)];
       if (isPickle && step >= growStart) {
         const t = (step - growStart) / (totalSteps - growStart);
-        card.style.transform = `scale(${(0.8 + 0.8 * t).toFixed(3)})`;
+        card.style.transform = `scale(${(0.8 + 0.5 * t).toFixed(3)})`;
       }
       tickId = setTimeout(tick, getDelay(step));
     };
@@ -1743,11 +1748,17 @@ class TreeDungeon2Game {
       } else if (isRevealedClue && !isPlayer) {
         const col = this._distColor(this.revealedDist[key]);
         ctx.fillStyle = col + '28'; ctx.fill();
-        ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.stroke();
+        ctx.strokeStyle = isReachable ? '#88cc55' : col;
+        ctx.lineWidth = 2; ctx.stroke();
       } else {
         ctx.fillStyle = isTrunk ? '#5a3010' : '#2e5a1a'; ctx.fill();
-        ctx.strokeStyle = isPlayer ? '#ffd700' : '#3a6a20';
-        ctx.lineWidth   = isPlayer ? 3 : 1;
+        if (isPlayer) {
+          ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3;
+        } else if (isReachable) {
+          ctx.strokeStyle = '#88cc55'; ctx.lineWidth = 2;
+        } else {
+          ctx.strokeStyle = '#3a6a20'; ctx.lineWidth = 1;
+        }
         ctx.stroke();
       }
       ctx.restore();
