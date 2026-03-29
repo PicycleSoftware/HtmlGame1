@@ -149,7 +149,14 @@ Fill in rows and columns to reveal the tree image. The pickle's position is enco
 - Solved grid reveals a tree silhouette with the pickle cell highlighted
 - Score = incorrect cells filled (errors)
 
-### ✅ 9. Tree Finder 2 (`tree-finder-2`) — DONE
+### ✅ 9. Tree Dungeon 2 (`tree-dungeon-2`) — DONE
+Same fog-of-war dungeon as Tree Dungeon, but ✨ cells now hide either a hot/cold distance clue (🔍) or the pickle (🥒).
+- Slot machine cycles 🥒/🔍, lands on the truth
+- Clue reveal shows distance label and color (Very close / Closer / Far / Very far) — same as Tree Finder
+- Pickle reveal runs the slot machine 2× longer before landing
+- Score = moves to reach the pickle
+
+### ✅ 10. Tree Finder 2 (`tree-finder-2`) — DONE
 Same hot/cold grid as Tree Finder with hint presents under the tree.
 - Same 9×8 tree-shaped grid (~40 cells)
 - 3 gift presents below the tree, each different colour (red / gold / blue)
@@ -227,7 +234,8 @@ Building blocks that could enhance or combine into prototypes — not strong eno
 7. ✅ Press Your Luck
 8. ✅ Nonogram (Pickle-o-gram)
 9. ✅ Excavate
-10. ✅ Tree Finder 2
+10. ✅ Tree Dungeon 2
+11. ✅ Tree Finder 2
 
 ---
 

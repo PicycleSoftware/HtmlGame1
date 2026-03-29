@@ -257,7 +257,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.11</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.12</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -393,6 +393,14 @@ const PROTOTYPES = [
     desc: 'Navigate the tree branch-by-branch like a dungeon. Limited visibility — explore carefully.',
     available: true,
     create: (canvas, seed) => new TreeDungeonGame(canvas, seed),
+  },
+  {
+    id: 'tree-dungeon-2',
+    name: 'Tree Dungeon 2',
+    icon: '🔦',
+    desc: 'Explore the foggy tree. Hidden items are either distance clues or the pickle itself — the slot machine tells you which.',
+    available: true,
+    create: (canvas, seed) => new TreeDungeon2Game(canvas, seed),
   },
   {
     id: 'light-strings',
@@ -1360,6 +1368,393 @@ class TreeDungeonGame {
     bar.style.flexDirection = 'column';
     bar.style.alignItems = 'center';
     bar.style.gap = '4px';
+
+    const makeBtn = (label, dr, dc) => {
+      const btn = document.createElement('button');
+      btn.className = 'ctrl-btn';
+      btn.textContent = label;
+      btn.style.cssText = 'width:52px;padding:8px 0;';
+      btn.addEventListener('click', () => this.move(dr, dc));
+      return btn;
+    };
+
+    const row1 = document.createElement('div');
+    row1.style.cssText = 'display:flex;gap:4px;';
+    row1.appendChild(makeBtn('⬆', -1, 0));
+
+    const row2 = document.createElement('div');
+    row2.style.cssText = 'display:flex;gap:4px;';
+    row2.appendChild(makeBtn('⬅', 0, -1));
+    row2.appendChild(makeBtn('⬇', 1, 0));
+    row2.appendChild(makeBtn('➡', 0, 1));
+
+    bar.appendChild(row1);
+    bar.appendChild(row2);
+  }
+}
+
+// ============================================================
+// PROTOTYPE: TREE DUNGEON 2
+// ============================================================
+// Same fog-of-war dungeon as Tree Dungeon, but ✨ cells now hide
+// either a distance clue (🔍) or the pickle (🥒).
+// Slot machine reveal cycles 🥒/🔍, lands on the truth.
+// Pickle reveal runs 2× longer.
+// Score = moves to reach the pickle.
+// ============================================================
+
+class TreeDungeon2Game {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.seed = seed;
+    this.moves = 0;
+    this.won = false;
+    this.animating = false;
+
+    this.onScoreUpdate = null;
+    this.onWin = null;
+
+    this.COLS = 9;
+    this.ROWS = 8;
+    this._buildTree();
+
+    const rng = makePRNG(seed ^ 0xBADC0FFE);
+
+    // Shuffle all cells
+    const allCells = [...this.treeCells];
+    for (let i = allCells.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [allCells[i], allCells[j]] = [allCells[j], allCells[i]];
+    }
+
+    // ~1/3 of cells are ✨ cells
+    const itemCount = Math.max(6, Math.floor(allCells.length / 3));
+    this.itemCells = new Set(allCells.slice(0, itemCount));
+
+    // Pickle in a non-trunk cell that is also an item cell
+    const pickable = allCells.filter(k => parseInt(k) < this.ROWS - 1);
+    for (let i = pickable.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pickable[i], pickable[j]] = [pickable[j], pickable[i]];
+    }
+    this.pickleKey = pickable[0];
+    this.itemCells.add(this.pickleKey);
+
+    // BFS distances from pickle for clue hints
+    this._computeDistances();
+
+    // Player starts at trunk centre
+    this.playerKey = `${this.ROWS - 1},4`;
+    if (!this.treeCells.has(this.playerKey)) {
+      this.playerKey = [...this.treeCells].find(k => k.startsWith(`${this.ROWS - 1},`));
+    }
+
+    this.visited  = new Set([this.playerKey]);
+    this.peeked   = new Set(this._neighbors(this.playerKey));
+    this.revealed = new Set(); // item cells already revealed (show dim icon)
+
+    this.totalCells = pickable.length;
+  }
+
+  _buildTree() {
+    const ranges = [[4,4],[3,5],[2,6],[1,7],[2,6],[1,7],[0,8],[3,5]];
+    this.treeCells = new Set();
+    for (let r = 0; r < this.ROWS; r++) {
+      const [lo, hi] = ranges[r];
+      for (let c = lo; c <= hi; c++) this.treeCells.add(`${r},${c}`);
+    }
+  }
+
+  _neighbors(key) {
+    const [r, c] = key.split(',').map(Number);
+    return [[-1,0],[1,0],[0,-1],[0,1]]
+      .map(([dr,dc]) => `${r+dr},${c+dc}`)
+      .filter(k => this.treeCells.has(k));
+  }
+
+  _computeDistances() {
+    this.dist = {};
+    const queue = [this.pickleKey];
+    this.dist[this.pickleKey] = 0;
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+    while (queue.length) {
+      const key = queue.shift();
+      const [r, c] = key.split(',').map(Number);
+      for (const [dr, dc] of dirs) {
+        const nk = `${r+dr},${c+dc}`;
+        if (this.treeCells.has(nk) && !(nk in this.dist)) {
+          this.dist[nk] = this.dist[key] + 1;
+          queue.push(nk);
+        }
+      }
+    }
+  }
+
+  _distLabel(d) {
+    if (d === 1) return 'Very close!';
+    if (d <= 3)  return 'Closer';
+    if (d <= 5)  return 'Far';
+    return 'Very far';
+  }
+
+  _distColor(d) {
+    const colors = ['#ff4444','#ff7700','#ffbb00','#ccdd00','#66cc44','#44aadd','#4477ff'];
+    return colors[Math.min(d - 1, colors.length - 1)];
+  }
+
+  move(dr, dc) {
+    if (this.won || this.animating) return;
+    const [r, c] = this.playerKey.split(',').map(Number);
+    const nk = `${r + dr},${c + dc}`;
+    if (!this.treeCells.has(nk)) return;
+    if (!this.peeked.has(nk) && !this.visited.has(nk)) return;
+
+    const isNewVisit = !this.visited.has(nk);
+    this.playerKey = nk;
+    this.moves++;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+
+    this.visited.add(nk);
+    for (const nb of this._neighbors(nk)) this.peeked.add(nb);
+
+    this.render();
+
+    if (isNewVisit && this.itemCells.has(nk)) {
+      const isPickle = nk === this.pickleKey;
+      const d = this.dist[nk] || 0;
+      this.animating = true;
+      this.revealed.add(nk);
+      this._showReveal(isPickle, d, () => {
+        this.animating = false;
+        if (isPickle) {
+          this.won = true;
+          this.render();
+          setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 200);
+        }
+      });
+    }
+  }
+
+  handleTap(px, py) {
+    if (this.won || this.animating) return;
+    const { cs, ox, oy } = this;
+    const c = Math.floor((px - ox) / cs);
+    const r = Math.floor((py - oy) / cs);
+    const key = `${r},${c}`;
+    if (!this.treeCells.has(key)) return;
+    if (!this.peeked.has(key) && !this.visited.has(key)) return;
+    const [pr, pc] = this.playerKey.split(',').map(Number);
+    const dr = r - pr, dc = c - pc;
+    if (Math.abs(dr) + Math.abs(dc) === 1) this.move(dr, dc);
+  }
+
+  _showReveal(isPickle, dist, onDone) {
+    const overlay    = document.getElementById('dungeon-reveal-overlay');
+    const card       = document.getElementById('reveal-card');
+    const titleEl    = document.getElementById('dungeon-reveal-title');
+    const emojiEl    = document.getElementById('dungeon-reveal-emoji');
+    const nameEl     = document.getElementById('dungeon-reveal-name');
+    const btn        = document.getElementById('dungeon-reveal-btn');
+    const confettiCvs = document.getElementById('confetti-canvas');
+
+    card.className    = 'reveal-card' + (isPickle ? ' pickle-mode' : '');
+    titleEl.className = 'reveal-title' + (isPickle ? ' pickle-mode' : '');
+    titleEl.textContent = 'You found something!';
+    nameEl.textContent  = '';
+    btn.style.display   = 'none';
+    btn.className       = isPickle ? 'pickle-btn' : '';
+    emojiEl.className   = '';
+    confettiCvs.style.display = 'none';
+    overlay.classList.add('show');
+
+    const landEmoji   = isPickle ? '🥒' : '🔍';
+    const pool        = ['🥒', '🔍'];
+    const totalSteps  = isPickle ? 52 : 26;
+    let step = 0, tickId = null, landed = false, confettiRaf = null;
+
+    const getDelay = s => Math.round(22 + 168 * Math.pow(s / totalSteps, 2.2));
+
+    const stopConfetti = () => {
+      if (confettiRaf) { cancelAnimationFrame(confettiRaf); confettiRaf = null; }
+      confettiCvs.style.display = 'none';
+    };
+
+    const closeReveal = () => {
+      stopConfetti();
+      overlay.classList.remove('show');
+      onDone();
+    };
+
+    const startConfetti = () => {
+      confettiCvs.width  = overlay.clientWidth;
+      confettiCvs.height = overlay.clientHeight;
+      confettiCvs.style.display = '';
+      const ctx = confettiCvs.getContext('2d');
+      const particles = Array.from({ length: 40 }, () => ({
+        x: Math.random() * confettiCvs.width,
+        y: -30 - Math.random() * 250,
+        speed: 1.5 + Math.random() * 2.5,
+        wobble: Math.random() * Math.PI * 2,
+        wobbleSpeed: 0.03 + Math.random() * 0.05,
+        size: 18 + Math.random() * 22,
+      }));
+      const loop = () => {
+        ctx.clearRect(0, 0, confettiCvs.width, confettiCvs.height);
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        for (const p of particles) {
+          p.y += p.speed; p.wobble += p.wobbleSpeed;
+          p.x += Math.sin(p.wobble) * 2;
+          if (p.y > confettiCvs.height + 40) { p.y = -40; p.x = Math.random() * confettiCvs.width; }
+          ctx.globalAlpha = 0.82;
+          ctx.font = `${p.size}px serif`;
+          ctx.fillText('🥒', p.x, p.y);
+        }
+        confettiRaf = requestAnimationFrame(loop);
+      };
+      loop();
+    };
+
+    const land = () => {
+      if (landed) return;
+      landed = true;
+      if (tickId) { clearTimeout(tickId); tickId = null; }
+      removeSlotListeners();
+
+      emojiEl.textContent = landEmoji;
+      void emojiEl.offsetWidth;
+      emojiEl.classList.add('landed');
+
+      if (isPickle) {
+        titleEl.textContent = '🎉 You found the Christmas Pickle! 🎉';
+        nameEl.textContent  = 'The Christmas Pickle! 🥒';
+        startConfetti();
+        btn.style.display = '';
+        btn.onclick = () => closeReveal();
+      } else {
+        const label = this._distLabel(dist);
+        const color = this._distColor(dist);
+        nameEl.innerHTML = `<span style="color:${color};font-weight:700">📍 ${label}</span><br><span style="font-size:0.8rem;color:#90b870">to the pickle</span>`;
+        let autoClose = setTimeout(() => { removeCloseListeners(); closeReveal(); }, 3000);
+        const onClose = () => { clearTimeout(autoClose); removeCloseListeners(); closeReveal(); };
+        const removeCloseListeners = () => {
+          overlay.removeEventListener('pointerdown', onClose);
+          window.removeEventListener('keydown', onClose);
+        };
+        overlay.addEventListener('pointerdown', onClose, { once: true });
+        window.addEventListener('keydown', onClose, { once: true });
+      }
+    };
+
+    const onSkip = (e) => { e.stopPropagation(); land(); };
+    const removeSlotListeners = () => {
+      overlay.removeEventListener('pointerdown', onSkip);
+      window.removeEventListener('keydown', onSkip);
+    };
+    overlay.addEventListener('pointerdown', onSkip);
+    window.addEventListener('keydown', onSkip);
+
+    const tick = () => {
+      step++;
+      if (step >= totalSteps) { removeSlotListeners(); land(); return; }
+      emojiEl.textContent = step >= totalSteps - 3 ? landEmoji : pool[Math.floor(Math.random() * pool.length)];
+      tickId = setTimeout(tick, getDelay(step));
+    };
+
+    emojiEl.textContent = pool[0];
+    tickId = setTimeout(tick, getDelay(0));
+  }
+
+  resize(w, h) {
+    this.canvas.width  = w;
+    this.canvas.height = h;
+    const pad  = 12;
+    const cellW = (w - pad * 2) / this.COLS;
+    const cellH = (h - pad * 2) / this.ROWS;
+    this.cs = Math.floor(Math.min(cellW, cellH, 64));
+    this.ox = Math.floor((w - this.cs * this.COLS) / 2);
+    this.oy = Math.floor((h - this.cs * this.ROWS) / 2);
+    this.render();
+  }
+
+  render() {
+    const { ctx, canvas, cs, ox, oy } = this;
+    const w = canvas.width, h = canvas.height;
+
+    ctx.fillStyle = '#0f1a07';
+    ctx.fillRect(0, 0, w, h);
+
+    const currentNeighbors = new Set(this._neighbors(this.playerKey));
+
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      const x = ox + c * cs, y = oy + r * cs;
+      const gap = 3;
+      const isPlayer    = key === this.playerKey;
+      const isTrunk     = r === this.ROWS - 1;
+      const isVisited   = this.visited.has(key);
+      const isPeeked    = this.peeked.has(key);
+      const hasItem     = this.itemCells.has(key);
+      const isReachable = currentNeighbors.has(key);
+      const isRevealed  = this.revealed.has(key);
+
+      ctx.save();
+      roundRect(ctx, x + gap, y + gap, cs - gap * 2, cs - gap * 2, 5);
+      if (!isVisited && !isPeeked) {
+        ctx.fillStyle = '#0a1205'; ctx.fill();
+      } else if (!isVisited) {
+        ctx.fillStyle = isTrunk ? '#3a1e0c' : '#1e3d10'; ctx.fill();
+        if (isReachable) { ctx.strokeStyle = '#88cc55'; ctx.lineWidth = 2; ctx.stroke(); }
+      } else {
+        ctx.fillStyle = isTrunk ? '#5a3010' : '#2e5a1a'; ctx.fill();
+        ctx.strokeStyle = isPlayer ? '#ffd700' : '#3a6a20';
+        ctx.lineWidth   = isPlayer ? 3 : 1;
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      const cx = x + cs / 2, cy = y + cs / 2;
+      const emojiSize = Math.floor(cs * 0.5);
+
+      if (!isVisited && isPeeked && hasItem) {
+        ctx.globalAlpha = isReachable ? 0.9 : 0.6;
+        ctx.font = `${emojiSize}px serif`;
+        ctx.fillText('✨', cx, cy);
+      } else if (isVisited) {
+        if (isPlayer) {
+          ctx.font = `${emojiSize}px serif`;
+          ctx.fillText('🧒', cx, cy);
+        } else if (isRevealed) {
+          const isPickle = key === this.pickleKey;
+          ctx.globalAlpha = 0.45;
+          ctx.font = `${Math.floor(cs * 0.44)}px serif`;
+          ctx.fillText(isPickle ? '🥒' : '🔍', cx, cy);
+        }
+      }
+      ctx.restore();
+    }
+
+    this._drawLegend();
+  }
+
+  _drawLegend() {
+    const ctx = this.ctx;
+    const y = this.canvas.height - 14;
+    ctx.save();
+    ctx.font = '11px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#6a8a5a';
+    ctx.textAlign = 'center';
+    ctx.fillText('✨ = something hidden   🔍 = distance clue   🧒 = you', this.canvas.width / 2, y);
+    ctx.restore();
+  }
+
+  renderCustomControls(bar) {
+    bar.style.flexDirection = 'column';
+    bar.style.alignItems    = 'center';
+    bar.style.gap           = '4px';
 
     const makeBtn = (label, dr, dc) => {
       const btn = document.createElement('button');
