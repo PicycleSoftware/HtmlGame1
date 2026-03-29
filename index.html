@@ -298,6 +298,7 @@
     <div class="win-stars" id="win-stars"></div>
     <div class="win-label" id="win-label"></div>
     <button class="win-btn primary" id="btn-share">📋 Copy Score to Share</button>
+    <button class="win-btn primary" id="btn-play-again" style="display:none">🔀 Play Again</button>
     <button class="win-btn secondary" id="btn-win-close">Keep Playing</button>
   </div>
 </div>
@@ -447,6 +448,7 @@ const PROTOTYPES = [
     icon: '🎁',
     desc: 'Hot/cold search with hint presents under the tree. Open a present for a directional clue — but it costs moves.',
     available: true,
+    allowPlayAgain: true,
     create: (canvas, seed) => new TreeFinder2Game(canvas, seed),
   },
 ];
@@ -525,7 +527,7 @@ function renderControls() {
   }
 }
 
-function startGame(proto) {
+function startGame(proto, seedOverride) {
   // Switch screens
   document.getElementById('screen-launcher').style.display = 'none';
   const gameScreen = document.getElementById('screen-game');
@@ -537,13 +539,14 @@ function startGame(proto) {
   const container = document.getElementById('canvas-container');
 
   // Create game instance
-  currentGame = proto.create(canvas, DAILY_SEED);
+  const seed = seedOverride !== undefined ? seedOverride : DAILY_SEED;
+  currentGame = proto.create(canvas, seed);
 
   currentGame.onScoreUpdate = (moves) => {
     document.getElementById('game-score').textContent = `Moves: ${moves}`;
   };
   currentGame.onWin = (moves) => {
-    saveScore(proto.id, moves);
+    if (seedOverride === undefined) saveScore(proto.id, moves);
     showWin(proto, moves);
   };
   currentGame.onControlsChange = renderControls;
@@ -663,6 +666,7 @@ function showWin(proto, moves) {
   document.getElementById('win-score-text').textContent = `${moves} move${moves !== 1 ? 's' : ''}`;
   document.getElementById('win-stars').textContent = rating.stars;
   document.getElementById('win-label').textContent = rating.label;
+  document.getElementById('btn-play-again').style.display = proto.allowPlayAgain ? '' : 'none';
   document.getElementById('win-overlay').classList.add('show');
 }
 
@@ -687,6 +691,12 @@ document.getElementById('btn-share').addEventListener('click', () => {
 
 document.getElementById('btn-win-close').addEventListener('click', () => {
   document.getElementById('win-overlay').classList.remove('show');
+});
+
+document.getElementById('btn-play-again').addEventListener('click', () => {
+  document.getElementById('win-overlay').classList.remove('show');
+  const freshSeed = (Date.now() ^ 0xF00DCAFE) >>> 0;
+  startGame(_winProto, freshSeed);
 });
 
 // ============================================================
