@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.17</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.18</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -1578,7 +1578,7 @@ class TreeDungeon2Game {
     card.className    = 'reveal-card' + (isPickle ? ' pickle-mode' : '');
     card.style.transform = 'scale(0.8)';
     titleEl.className = 'reveal-title' + (isPickle ? ' pickle-mode' : '');
-    titleEl.textContent = isPickle ? 'You found something!' : 'You found a clue!';
+    titleEl.textContent = 'You found something!';
     nameEl.textContent  = '';
     btn.style.display   = 'none';
     playAgainBtn.style.display = 'none';
@@ -1660,6 +1660,7 @@ class TreeDungeon2Game {
           startGame(proto, freshSeed);
         };
       } else {
+        titleEl.textContent = 'You found a clue!';
         const label = this._distLabel(dist);
         const color = this._distColor(dist);
         nameEl.innerHTML = `<span style="color:${color};font-weight:700">📍 ${label}</span><br><span style="font-size:0.8rem;color:#90b870">to the pickle</span>`;
@@ -1693,13 +1694,12 @@ class TreeDungeon2Game {
   resize(w, h) {
     this.canvas.width  = w;
     this.canvas.height = h;
-    const pad = 12;
-    const topBarH = 24;
+    const pad  = 12;
     const cellW = (w - pad * 2) / this.COLS;
-    const cellH = (h - pad - topBarH) / this.ROWS;
+    const cellH = (h - pad * 2) / this.ROWS;
     this.cs = Math.floor(Math.min(cellW, cellH, 64));
     this.ox = Math.floor((w - this.cs * this.COLS) / 2);
-    this.oy = topBarH + Math.floor((h - topBarH - pad - this.cs * this.ROWS) / 2);
+    this.oy = Math.floor((h - this.cs * this.ROWS) / 2);
     this.render();
   }
 
@@ -1709,20 +1709,6 @@ class TreeDungeon2Game {
 
     ctx.fillStyle = '#0f1a07';
     ctx.fillRect(0, 0, w, h);
-
-    // Current-cell hint label above grid
-    if (this.playerKey in this.revealedDist && this.playerKey !== this.pickleKey) {
-      const d = this.revealedDist[this.playerKey];
-      const label = this._distLabel(d).replace('\n', ' ');
-      const color = this._distColor(d);
-      ctx.save();
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.font = 'bold 13px sans-serif';
-      ctx.fillStyle = color;
-      ctx.fillText(`Currently: ${label}`, w / 2, 12);
-      ctx.restore();
-    }
 
     const currentNeighbors = new Set(this._neighbors(this.playerKey));
 
@@ -1745,15 +1731,21 @@ class TreeDungeon2Game {
       } else if (!isVisited) {
         ctx.fillStyle = isTrunk ? '#3a1e0c' : '#1e3d10'; ctx.fill();
         if (isReachable) { ctx.strokeStyle = '#88cc55'; ctx.lineWidth = 2; ctx.stroke(); }
-      } else if (isRevealedClue && !isPlayer) {
+      } else if (isRevealedClue) {
         const col = this._distColor(this.revealedDist[key]);
         ctx.fillStyle = col + '28'; ctx.fill();
-        ctx.strokeStyle = isReachable ? '#88cc55' : col;
-        ctx.lineWidth = 2; ctx.stroke();
+        if (isPlayer) {
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
+        } else if (isReachable) {
+          ctx.strokeStyle = '#88cc55'; ctx.lineWidth = 2;
+        } else {
+          ctx.strokeStyle = col; ctx.lineWidth = 2;
+        }
+        ctx.stroke();
       } else {
         ctx.fillStyle = isTrunk ? '#5a3010' : '#2e5a1a'; ctx.fill();
         if (isPlayer) {
-          ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3;
+          ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 3;
         } else if (isReachable) {
           ctx.strokeStyle = '#88cc55'; ctx.lineWidth = 2;
         } else {
@@ -1773,10 +1765,7 @@ class TreeDungeon2Game {
         ctx.font = `${emojiSize}px serif`;
         ctx.fillText('✨', cx, cy);
       } else if (isVisited) {
-        if (isPlayer) {
-          ctx.font = `${emojiSize}px serif`;
-          ctx.fillText('🧒', cx, cy);
-        } else if (key in this.revealedDist) {
+        if (key in this.revealedDist) {
           if (key === this.pickleKey) {
             ctx.globalAlpha = 0.45;
             ctx.font = `${Math.floor(cs * 0.44)}px serif`;
@@ -1808,7 +1797,7 @@ class TreeDungeon2Game {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#6a8a5a';
     ctx.textAlign = 'center';
-    ctx.fillText('✨ = something hidden   🧒 = you   tap or d-pad to move', this.canvas.width / 2, y);
+    ctx.fillText('✨ = something hidden   □ white outline = you   tap or d-pad to move', this.canvas.width / 2, y);
     ctx.restore();
   }
 
