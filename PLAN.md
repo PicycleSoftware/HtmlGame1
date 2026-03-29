@@ -241,6 +241,12 @@ Building blocks that could enhance or combine into prototypes — not strong eno
 
 ---
 
+## Versioning
+
+The launcher title displays a version number (e.g. `v0.11`). Increment it with every commit that changes game code or behavior. The version lives in `index.html` in the `<h1>` on the launcher screen.
+
+---
+
 ## Verification Checklist
 - [ ] Opens directly in browser (no server)
 - [ ] Works in Chrome DevTools mobile emulator (iPhone SE) — tap targets ≥ 44px
