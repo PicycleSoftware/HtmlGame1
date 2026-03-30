@@ -348,13 +348,32 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Source:** Mechanic combination #188 (Hidden Information + Binary Elimination).
 
-### ⬜ 19. House Exploration (`house-explore`)
+### ⬜ 19. Pickle-sweeper (`pickle-sweeper`)
+**Concept:** Minesweeper, but inverted — the numbered clues tell you how many pickle ornaments are in adjacent cells. You're hunting the pickles, not avoiding mines. Find all of them.
+
+**Mechanics:**
+- Tree-shaped grid, all cells hidden
+- Tap to reveal a cell: shows a number (count of pickle ornaments in adjacent cells) or a pickle ornament (score!)
+- No instant-death — revealing a pickle is the goal, not a failure
+- Multiple pickles hidden per puzzle (seeded count and positions)
+- Flag mode to mark suspected pickle cells
+- Win = all pickles found
+- Score = cells revealed before finding all pickles (fewer = better)
+
+**Why it's interesting:**
+- Zero learning curve for anyone who's seen Minesweeper; inverted goal removes the frustration of accidental death
+- Familiar deduction loop with a friendlier emotional frame — you're collecting treasure, not tiptoeing through a minefield
+- Simple enough to be one game in a multi-game daily format (Mario Party / WarioWare style)
+
+**Seed use:** Pickle positions seeded. Same grid for everyone that day.
+
+### ⬜ 20. House Exploration (`house-explore`)
 Top-down RPG (Link's Awakening style). Walk through rooms of the house on Christmas Eve, talk to NPCs for clues, find the pickle hidden somewhere in the tree room.
 - Grid-based movement, multiple rooms
 - NPCs give directional or hot/cold clues
 - Score = steps taken
 
-### ⬜ 20. Metroidvania Tree (`metroidvania`)
+### ⬜ 21. Metroidvania Tree (`metroidvania`)
 Side-scrolling tree with locked branches. Find key ornaments to unlock new sections and eventually reach the pickle.
 - Left/right/up/down movement across branches
 - Certain paths blocked until player finds matching key ornament
