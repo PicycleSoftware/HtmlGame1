@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.18</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.19</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -469,6 +469,14 @@ const PROTOTYPES = [
     available: true,
     allowPlayAgain: true,
     create: (canvas, seed) => new TreeFinder2Game(canvas, seed),
+  },
+  {
+    id: 'shake-tree',
+    name: 'Shake the Tree',
+    icon: '🌲',
+    desc: 'Swipe to shake ornaments aside and find the hidden pickle. Ornaments drift back — tap it fast when you spot it!',
+    available: true,
+    create: (canvas, seed) => new ShakeTreeGame(canvas, seed),
   },
 ];
 
@@ -4066,6 +4074,316 @@ class TreeFinder2Game {
     p.hint = p.getHint();
     this.slotAnim = { p, startTime: Date.now(), totalMs: 1300 };
     this.render();
+  }
+}
+
+// ============================================================
+// PROTOTYPE: SHAKE THE TREE
+// ============================================================
+// Swipe to push ornaments out of the way and find the pickle.
+// Wide swipes cover more area but settle back fast.
+// Precise swipes cover less but hold longer.
+// Tap the pickle when it peeks out. Score = swipes used.
+// Mechanic: Area of Effect + Swipe to Move (#103)
+// ============================================================
+
+class ShakeTreeGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.seed = seed;
+    this.moves = 0;
+    this.won = false;
+    this.onScoreUpdate = null;
+    this.onWin = null;
+    this.onControlsChange = null;
+    this.dragStart = null;
+    this.dragCurrent = null;
+    this._animFrame = null;
+    this.pickleExposed = false;
+    this.cs = 0;
+
+    this.COLS = 9;
+    this.ROWS = 8;
+    this.ranges = [[4,4],[3,5],[2,6],[1,7],[2,6],[1,7],[0,8],[3,5]];
+    this._buildTreeCells();
+
+    const rng = makePRNG(seed ^ 0xCAFEBABE);
+
+    // Choose pickle position (interior cells — not star row, not trunk)
+    const pickable = [...this.treeCells].filter(k => {
+      const r = +k.split(',')[0];
+      return r > 0 && r < this.ROWS - 1;
+    });
+    for (let i = pickable.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pickable[i], pickable[j]] = [pickable[j], pickable[i]];
+    }
+    this.pickleKey = pickable[0];
+    this.totalCells = 20; // for score rating
+
+    this.ornaments = this._placeOrnaments(rng);
+  }
+
+  _buildTreeCells() {
+    this.treeCells = new Set();
+    for (let r = 0; r < this.ROWS; r++) {
+      const [lo, hi] = this.ranges[r];
+      for (let c = lo; c <= hi; c++) this.treeCells.add(`${r},${c}`);
+    }
+  }
+
+  _placeOrnaments(rng) {
+    const [pr, pc] = this.pickleKey.split(',').map(Number);
+    const COLORS = ['#e03030','#e8b010','#3090e0','#c040a0','#30b060','#e06020'];
+    const orns = [];
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      if (r === 0 || r === this.ROWS - 1) continue; // skip star row and trunk
+      const dist = Math.abs(r - pr) + Math.abs(c - pc);
+      const base = dist === 0 ? 4 : dist <= 1 ? 3 : dist <= 2 ? 2 : 1;
+      const count = base + (rng() < 0.4 ? 1 : 0);
+      for (let i = 0; i < count; i++) {
+        orns.push({
+          homeR: r, homeC: c,
+          offX: (rng() - 0.5) * 0.52,   // fractional offset within cell
+          offY: (rng() - 0.5) * 0.52,
+          homeX: 0, homeY: 0,
+          x: 0, y: 0,
+          color: COLORS[Math.floor(rng() * COLORS.length)],
+          rad: 0,
+          settleAfter: 0,                // timestamp to start drifting back
+        });
+      }
+    }
+    return orns;
+  }
+
+  resize(w, h) {
+    this.canvas.width = w;
+    this.canvas.height = h;
+    if (this._animFrame) { cancelAnimationFrame(this._animFrame); this._animFrame = null; }
+
+    const cellW = (w - 20) / this.COLS;
+    const cellH = (h - 50) / this.ROWS;
+    this.cs = Math.floor(Math.min(cellW, cellH, 60));
+    const cs = this.cs;
+    this.ox = Math.floor((w - cs * this.COLS) / 2);
+    this.oy = Math.floor((h - 30 - cs * this.ROWS) / 2);
+
+    for (const orn of this.ornaments) {
+      orn.homeX = this.ox + (orn.homeC + 0.5) * cs + orn.offX * cs;
+      orn.homeY = this.oy + (orn.homeR + 0.5) * cs + orn.offY * cs;
+      orn.x = orn.homeX;
+      orn.y = orn.homeY;
+      orn.rad = Math.max(7, cs * 0.26);
+      orn.settleAfter = 0;
+    }
+
+    const [pr, pc] = this.pickleKey.split(',').map(Number);
+    this.pickleX = this.ox + (pc + 0.5) * cs;
+    this.pickleY = this.oy + (pr + 0.5) * cs;
+    this.coverR = cs * 0.36;   // ornament-to-pickle distance threshold for "covering"
+
+    this._checkExposure();
+    this.render();
+  }
+
+  handleDrag(x, y, startX, startY) {
+    if (this.won) return;
+    this.dragStart = { x: startX, y: startY };
+    this.dragCurrent = { x, y };
+    this.render();
+  }
+
+  handleDragEnd(x, y, startX, startY) {
+    this.dragStart = null;
+    this.dragCurrent = null;
+    if (this.won) { this.render(); return; }
+
+    const dx = x - startX, dy = y - startY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 18) {
+      // Short tap — check if pickle is exposed and user tapped it
+      if (this.pickleExposed) {
+        const dpx = x - this.pickleX, dpy = y - this.pickleY;
+        if (Math.sqrt(dpx * dpx + dpy * dpy) < this.coverR * 2.2) {
+          this._win(); return;
+        }
+      }
+      this.render();
+      return;
+    }
+
+    // Swipe — displace ornaments in the AoE
+    this.moves++;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.moves);
+
+    const cs = this.cs;
+    const midX = (startX + x) / 2, midY = (startY + y) / 2;
+    const aoeR = Math.min(dist * 0.6, cs * 2.5);    // area of effect radius
+    const str  = Math.min(dist * 0.5, cs * 1.6);    // displacement strength
+    const mag  = Math.max(dist, 1);
+    const dirX = dx / mag, dirY = dy / mag;
+    // Shorter swipe → longer settle delay; longer swipe → shorter delay
+    const settleDelay = Math.max(800, 2600 - dist * 8);
+    const now = Date.now();
+
+    for (const orn of this.ornaments) {
+      const odx = orn.x - midX, ody = orn.y - midY;
+      const od  = Math.sqrt(odx * odx + ody * ody);
+      if (od < aoeR) {
+        const f = 1 - od / aoeR;   // falloff: centre = full push, edge = no push
+        orn.x += dirX * str * f;
+        orn.y += dirY * str * f;
+        orn.settleAfter = now + settleDelay;
+      }
+    }
+
+    this._checkExposure();
+    this._ensureAnimating();
+    this.render();
+  }
+
+  _checkExposure() {
+    if (this.won) return;
+    let covered = 0;
+    for (const orn of this.ornaments) {
+      const dx = orn.x - this.pickleX, dy = orn.y - this.pickleY;
+      if (Math.sqrt(dx * dx + dy * dy) < this.coverR + orn.rad) covered++;
+    }
+    this.pickleExposed = covered < 2;
+  }
+
+  _ensureAnimating() {
+    if (!this._animFrame) {
+      this._animFrame = requestAnimationFrame(() => this._tick());
+    }
+  }
+
+  _tick() {
+    this._animFrame = null;
+    const now = Date.now();
+    let active = false;
+    for (const orn of this.ornaments) {
+      const dx = orn.homeX - orn.x, dy = orn.homeY - orn.y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 0.5) { orn.x = orn.homeX; orn.y = orn.homeY; continue; }
+      if (now < orn.settleAfter) { active = true; continue; } // waiting to settle
+      orn.x += dx * 0.07;   // lerp toward home
+      orn.y += dy * 0.07;
+      active = true;
+    }
+    this._checkExposure();
+    this.render();
+    if (active) this._animFrame = requestAnimationFrame(() => this._tick());
+  }
+
+  _win() {
+    this.won = true;
+    this.render();
+    setTimeout(() => { if (this.onWin) this.onWin(this.moves); }, 500);
+  }
+
+  render() {
+    const { ctx, canvas, cs, ox, oy } = this;
+    if (!cs) return;
+    const w = canvas.width, h = canvas.height;
+
+    ctx.fillStyle = '#1a3a0a';
+    ctx.fillRect(0, 0, w, h);
+
+    // Tree cell backgrounds
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      ctx.save();
+      roundRect(ctx, ox + c * cs + 2, oy + r * cs + 2, cs - 4, cs - 4, 5);
+      ctx.fillStyle = r === this.ROWS - 1 ? '#4a2808' : '#1e4a12';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Star (always visible at top)
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${Math.floor(cs * 0.62)}px serif`;
+    ctx.fillText('⭐', ox + 4.5 * cs, oy + 0.5 * cs);
+    ctx.restore();
+
+    // Pickle — draw BEFORE ornaments so they layer on top when covering it
+    if (this.pickleExposed || this.won) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      if (!this.won) {
+        ctx.shadowColor = '#aaffaa';
+        ctx.shadowBlur = 18;
+      }
+      ctx.font = `${Math.floor(cs * 0.72)}px serif`;
+      ctx.fillText('🥒', this.pickleX, this.pickleY);
+      ctx.restore();
+
+      // Dashed tap-target ring around pickle
+      if (this.pickleExposed && !this.won) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(this.pickleX, this.pickleY, this.coverR * 2.1, 0, Math.PI * 2);
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // Ornaments (on top — they physically cover the pickle)
+    for (const orn of this.ornaments) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(orn.x, orn.y, orn.rad, 0, Math.PI * 2);
+      ctx.fillStyle = orn.color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      // Shine highlight
+      ctx.beginPath();
+      ctx.arc(orn.x - orn.rad * 0.3, orn.y - orn.rad * 0.28, orn.rad * 0.2, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.fill();
+      // Hanging cap
+      ctx.fillStyle = '#b08030';
+      ctx.fillRect(orn.x - 2, orn.y - orn.rad - 4, 4, 4);
+      ctx.restore();
+    }
+
+    // Swipe trail while dragging
+    if (this.dragStart && this.dragCurrent) {
+      const ds = this.dragStart, dc = this.dragCurrent;
+      const swipeDist = Math.hypot(dc.x - ds.x, dc.y - ds.y);
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(ds.x, ds.y);
+      ctx.lineTo(dc.x, dc.y);
+      ctx.strokeStyle = `rgba(255,255,180,${Math.min(swipeDist / 80, 0.55)})`;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Instruction hint on first move
+    if (!this.won && this.moves === 0) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = 'rgba(160,210,130,0.85)';
+      ctx.fillText('Swipe to shake ornaments · tap the pickle when you find it!', w / 2, h - 8);
+      ctx.restore();
+    }
   }
 }
 
