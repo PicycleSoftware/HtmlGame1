@@ -246,13 +246,115 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Source:** Mechanic combination #70 (Column Shifting + Drag to Slot), rated A by Meier pass, Casual-Friendly by accessibility pass.
 
-### ⬜ 14. House Exploration (`house-explore`)
+### ⬜ 14. Pickle Hunt (`pickle-hunt`)
+**Concept:** Spend ornament tokens to reveal hidden branches (fog of war), or save them — they also score points at game end. Same resource, two uses, every tap is a real trade.
+
+**Mechanics:**
+- Tree-shaped grid, all cells hidden under fog
+- Player starts with a fixed supply of ornament tokens (seeded count)
+- Spend a token: reveal a cell — shows either empty, ornament emoji, or the pickle (win)
+- Tokens not spent on reveals score points at game end
+- Score = tokens remaining when pickle is found (fewer reveals = better)
+
+**Why it's interesting:**
+- Reveal vs. save is immediately legible — no gamer vocabulary needed
+- Scarcity gives the reveal moment weight; the last token spent on the right cell is a gasp
+- Win moment: you gambled your last token and the pickle was there
+
+**Source:** Mechanic combination #97 (Fog of War + Scarcity Management). Panel consensus: essential, strongest pick. *"Everything else should be compared against this." — Lazzaro*
+
+### ⬜ 15. Pickle Garland (`pickle-garland`)
+**Concept:** String ornaments into a scoring chain — each one added scores more than the last. But the next ornament is hidden; it might break the chain and score nothing. Stop and bank, or keep stringing?
+
+**Mechanics:**
+- Tree-shaped grid of hidden ornaments
+- Player taps to add the next ornament to the garland; its type is revealed on tap
+- Matching type extends the chain and multiplies score; wrong type breaks it (score nothing for that chain)
+- Player can stop and bank the chain score at any time before tapping
+- Pickle is hidden among the ornaments — finding it while stringing a chain triggers win + chain score bonus
+- Score = total chain points banked
+
+**Why it's interesting:**
+- "Keep going or stop" is universally understood — Jenga, Blackjack, any childhood game
+- Two win flavors: brave (extended and hit jackpot) or smart (banked at exactly the right moment)
+- Even losing a chain is fun — you overreached
+
+**Source:** Mechanic combination #195 (Hidden Information + Chain Scoring). Panel consensus: essential. *"Cleanest emotional signature of any mechanic on the list." — Lazzaro*
+
+### ⬜ 16. Vault Trigger (`vault-trigger`)
+**Concept:** Deduce where the pickle is hiding, then commit — step on the pressure plate that reveals a branch. The plate starts a process you can't undo. Are you sure enough?
+
+**Mechanics:**
+- Tree grid with hidden cells; clues scattered across revealed cells (hot/cold or directional)
+- Player builds a deduction until they feel confident
+- "Commit" tap on a cell triggers an irreversible reveal sequence (animation, no backing out)
+- Wrong commit: reveal shows empty, costs extra moves, and the animation makes the failure memorable
+- Right commit: pickle emerges with ceremony — the commitment payoff
+- Score = moves used before correct commit
+
+**Why it's interesting:**
+- Commitment is the drama, not the deduction — thin logic layer, thick tension
+- The irreversible moment is the held-breath mechanic; non-gamers understand "are you sure?"
+- Win moment: you stepped on the plate and were right
+
+**Source:** Mechanic combination #117 (Deduction + Pressure Plate). Panel consensus: essential.
+
+### ⬜ 17. Press Your Branch (`press-branch`)
+**Concept:** Each correct guess about the pickle's location adds a new constraint to the game. The puzzle tightens as you succeed. Push your luck — one more guess — or bank what you've narrowed down?
+
+**Mechanics:**
+- Tree grid; player makes directional guesses ("it's in the upper half", "it's on the left side")
+- Each correct guess scores points AND adds a new rule constraining future guesses
+- Each wrong guess costs moves
+- As constraints accumulate the search space shrinks — but so does room for error
+- Pickle is found when constraints narrow to a single cell
+- Score = moves used
+
+**Why it's interesting:**
+- Jenga/Blackjack emotional DNA — "one more" is universally understood
+- Game tightens as you succeed, building natural tension toward the end
+- Win moment: the cascade of constraints collapses to one cell and the pickle is there
+
+**Risk:** Constraint display must stay legible on a small screen — if rules pile up off-screen the session collapses.
+
+**Source:** Mechanic combination #171 (Constraint Propagation + Pressing Luck). Panel consensus: strong.
+
+### ⬜ 18. Branch or Deduce (`branch-deduce`)
+**Concept:** Investigate where the pickle is hiding. You can deduce from existing clues (safe, slow) or open a speculative branch — committing to a hypothesis to force new clues to emerge. Branching costs a turn but unlocks information you couldn't get any other way.
+
+**Mechanics:**
+- Tree grid with hidden cells; some cells contain clues (revealed on tap)
+- Each turn: either use a clue to eliminate cells (deduction, free) or "branch" — commit to a hypothesis zone, paying 1 move to reveal a clue cluster in that zone
+- Wrong branch wastes the move; right branch shortcuts to the pickle
+- Score = moves used before finding pickle
+
+**Why it's interesting:**
+- "Speculate to generate information" gives players agency over the deduction process
+- Win moment feels personal — you took the branch nobody else would take and were right
+- Serious Fun: *you* figured it out, not the system
+
+**Source:** Mechanic combination #139 (Deduction Grid + Choice Branching). Panel consensus: strong (Brown's strongest miss). *"It means something that you figured it out." — Lazzaro*
+
+---
+
+## Maybe Someday
+
+### Evidence Burn (`evidence-burn`)
+**Concept:** Like Minesweeper but with only one special hidden cell (the pickle). Eliminate cells without revealing them for a small reward — but if you accidentally burn the pickle, it's gone. Reveal vs. eliminate, every turn.
+
+**Why interesting:** Binary verb (reveal vs. eliminate) is clean; eliminating builds probability that the pickle is elsewhere, creating emergent deduction without a deduction system.
+
+**Why it's a maybe:** Win moment is quiet — by the time you tap the last cell, the odds have already told you it's the pickle. Lazzaro: "diffuse win, doesn't feel like finding the pickle." Could work as a secondary mechanic layered onto another prototype rather than a standalone game.
+
+**Source:** Mechanic combination #188 (Hidden Information + Binary Elimination).
+
+### ⬜ 19. House Exploration (`house-explore`)
 Top-down RPG (Link's Awakening style). Walk through rooms of the house on Christmas Eve, talk to NPCs for clues, find the pickle hidden somewhere in the tree room.
 - Grid-based movement, multiple rooms
 - NPCs give directional or hot/cold clues
 - Score = steps taken
 
-### ⬜ 15. Metroidvania Tree (`metroidvania`)
+### ⬜ 20. Metroidvania Tree (`metroidvania`)
 Side-scrolling tree with locked branches. Find key ornaments to unlock new sections and eventually reach the pickle.
 - Left/right/up/down movement across branches
 - Certain paths blocked until player finds matching key ornament
