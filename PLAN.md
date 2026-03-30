@@ -205,9 +205,11 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 - Spatial reasoning without time pressure — ideal for all ages
 - Satisfying "click" moment when the path clears and the pickle slides out
 
+**Enhancement to consider:** Add continuous positional feedback as ornaments slide — a faint glow or warmth gradient that intensifies as the gap approaches the pickle's position. This turns pure spatial reasoning into a tuning-dial mechanic: you're calibrating position, not just clearing a path. Keeps casual players oriented without removing the puzzle structure.
+
 **Seed use:** Ornament positions, sizes, and orientations seeded. Pickle start position and exit seeded.
 
-### ⬜ 12. Shake the Tree (`shake-tree`)
+### ✅ 12. Shake the Tree (`shake-tree`) — DONE
 **Concept:** Swipe branches to shift ornaments; they slowly settle back. The pickle is buried under layered ornaments — only visible and tappable when you've cleared enough of the right area.
 
 **Mechanics:**
@@ -226,44 +228,43 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Source:** Mechanic combination #103 (Area of Effect + Swipe to Move), rated A by Meier pass, Casual-Friendly by accessibility pass.
 
-### ⬜ 13. Part the Branches (`part-branches`)
-**Concept:** Drag vertical strips of tree branches left and right to open sightlines into the tree interior. The pickle is hidden inside — tap it when you've parted the right columns.
+### ⚠️ 13. Pickle Hunt (`pickle-hunt`) — NEEDS REDESIGN
+**Conflict:** Core verb (tap-to-reveal) + info model (hot/cold hints) = Tree Finder. Removing hints + adding slot machine reveal = Press Your Luck + Tree Dungeon. Root cause: "reveal vs. save" tension isn't real when NOT revealing is never the better choice. With uniform-cost reveals and no competing use for tokens, players always want to reveal — the scarcity is cosmetic, not a genuine decision.
+
+**Redesign direction to explore:** Tokens as literal decorations (place for points vs. spend to reveal), or upfront structural hints that narrow search space before any cell is tapped, or zone reveals (token buys a zone clue, not a cell reveal).
+
+**Original concept:** Spend ornament tokens to reveal hidden cells, or save them — unspent tokens are your score. Same resource, two uses, one decision per tap.
 
 **Mechanics:**
-- Tree rendered as layered vertical columns of overlapping branches
-- Drag a column left or right to open a gap; adjacent columns partially block each other
-- Pickle is in the interior — only tappable when a clear sightline exists through the right set of columns simultaneously
-- Score = number of column drags used
+- Tree-shaped grid (~36 interior cells), all hidden under fog
+- Player has exactly 36 tokens — one per pickable cell — displayed as a 4×9 grid of small ornament icons below the tree
+- Tap a hidden cell: spend 1 token → reveal it
+  - Not pickle: small ornament emoji appears + hot/cold distance hint (Very close / Closer / Far / Very far, color-coded, same system as Tree Finder)
+  - Pickle found: win immediately
+- Score = tokens remaining (= 36 − reveals used). Displayed in header as "Tokens: N"
+- No fail state: tokens = cells guarantees the pickle is always findable. Last unrevealed cell is always the pickle.
+- `onWin` receives `reveals_used` (not tokens_remaining) so global star-rating thresholds work correctly (lower = better)
 
-**Why it's interesting:**
-- Sightline logic maps naturally to peering into a dense tree
-- Decision: which gap do you need, and what does creating it cost in adjacent columns?
-- Physical metaphor is strong and requires no explanation
+**Token display:**
+- 4 rows × 9 columns of small ornament icons (mirrors tree column width)
+- Icons disappear left-to-right, top-to-bottom as tokens are spent
+- Seeded ornament colors for visual variety across days
 
-**Risk:** Underlying slider puzzle structure may trigger non-gamer resistance — validate with paper prototype before building.
+**Reveal animation (hybrid):**
+- Default: quick fog-lift ~150ms
+- Last 3 tokens remaining: slow fog-part ~350ms, pulse on remaining icon row
+- Last 1 token: guaranteed pickle — full ceremony (fog sweeps, pickle glows, pause before win screen fires)
 
-**Seed use:** Pickle depth and position seeded. Column layout seeded.
-
-**Source:** Mechanic combination #70 (Column Shifting + Drag to Slot), rated A by Meier pass, Casual-Friendly by accessibility pass.
-
-### ⬜ 14. Pickle Hunt (`pickle-hunt`)
-**Concept:** Spend ornament tokens to reveal hidden branches (fog of war), or save them — they also score points at game end. Same resource, two uses, every tap is a real trade.
-
-**Mechanics:**
-- Tree-shaped grid, all cells hidden under fog
-- Player starts with a fixed supply of ornament tokens (seeded count)
-- Spend a token: reveal a cell — shows either empty, ornament emoji, or the pickle (win)
-- Tokens not spent on reveals score points at game end
-- Score = tokens remaining when pickle is found (fewer reveals = better)
+**Hint system note:** Hot/cold hints may make the game feel too easy. Remove per-reveal hints if testing shows tokens rarely dip below 20. The scarcity mechanic should carry the tension on its own.
 
 **Why it's interesting:**
 - Reveal vs. save is immediately legible — no gamer vocabulary needed
-- Scarcity gives the reveal moment weight; the last token spent on the right cell is a gasp
-- Win moment: you gambled your last token and the pickle was there
+- Scarcity gives each reveal weight; the last-token moment is the dramatic peak
+- Win moment: you gambled your last token on a branch — the pickle was there
 
 **Source:** Mechanic combination #97 (Fog of War + Scarcity Management). Panel consensus: essential, strongest pick. *"Everything else should be compared against this." — Lazzaro*
 
-### ⬜ 15. Pickle Garland (`pickle-garland`)
+### ✅ 15. Pickle Garland (`pickle-garland`) — DONE
 **Concept:** String ornaments into a scoring chain — each one added scores more than the last. But the next ornament is hidden; it might break the chain and score nothing. Stop and bank, or keep stringing?
 
 **Mechanics:**
@@ -299,7 +300,7 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Source:** Mechanic combination #117 (Deduction + Pressure Plate). Panel consensus: essential.
 
-### ⬜ 17. Press Your Branch (`press-branch`)
+### ⬜ 17. Press Your Branch (`press-branch`) — build after Vault Trigger (#16) to verify distinct feel in practice
 **Concept:** Each correct guess about the pickle's location adds a new constraint to the game. The puzzle tightens as you succeed. Push your luck — one more guess — or bank what you've narrowed down?
 
 **Mechanics:**
@@ -318,22 +319,6 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 **Risk:** Constraint display must stay legible on a small screen — if rules pile up off-screen the session collapses.
 
 **Source:** Mechanic combination #171 (Constraint Propagation + Pressing Luck). Panel consensus: strong.
-
-### ⬜ 18. Branch or Deduce (`branch-deduce`)
-**Concept:** Investigate where the pickle is hiding. You can deduce from existing clues (safe, slow) or open a speculative branch — committing to a hypothesis to force new clues to emerge. Branching costs a turn but unlocks information you couldn't get any other way.
-
-**Mechanics:**
-- Tree grid with hidden cells; some cells contain clues (revealed on tap)
-- Each turn: either use a clue to eliminate cells (deduction, free) or "branch" — commit to a hypothesis zone, paying 1 move to reveal a clue cluster in that zone
-- Wrong branch wastes the move; right branch shortcuts to the pickle
-- Score = moves used before finding pickle
-
-**Why it's interesting:**
-- "Speculate to generate information" gives players agency over the deduction process
-- Win moment feels personal — you took the branch nobody else would take and were right
-- Serious Fun: *you* figured it out, not the system
-
-**Source:** Mechanic combination #139 (Deduction Grid + Choice Branching). Panel consensus: strong (Brown's strongest miss). *"It means something that you figured it out." — Lazzaro*
 
 ---
 
@@ -431,6 +416,35 @@ Decide what to add to the prototype queue.
 | **Frogger** — hop across gifts to reach the tree | No real-time/reaction games |
 | **Sliding Tile** — scrambled tree image, slide tiles to solve | Weak core loop; frustrating journey, satisfaction only at the end |
 | **Fog-of-War Map** — reveal zones, get directional arrows | Weak core loop; tapping for info isn't a loop, overlaps with Tree Finder |
+| **Branch or Deduce** (#18) — free deduction or pay to branch for a clue cluster | Same experience as Tree Finder 2: free cheap info vs. paid better info loop. No genuinely new verb. |
+
+---
+
+## Conflict Check
+
+Before building any new prototype, run this 3-axis fingerprint check against all existing prototypes. **If 2 of 3 axes match, it's a conflict — stop and redesign.**
+
+| Axis | Question |
+|---|---|
+| **Core verb** | What does the player *do* on each turn? (tap-to-reveal, drag-to-move, chain-extend, commit-once…) |
+| **Info model** | How does the player learn where the pickle is? (hot/cold hints, fog-of-war, visible costs, deduction, no info…) |
+| **Resource feel** | What is the emotional texture of the resource? (gambling, scarcity countdown, physical displacement, chain extension…) |
+
+**Existing fingerprints:**
+
+| Prototype | Core verb | Info model | Resource feel |
+|---|---|---|---|
+| Tree Finder | tap-to-reveal | hot/cold distance | free search, flag elimination |
+| Tree Dungeon | walk-to-cell | fog-of-war proximity (✨) | exploration budget |
+| String of Lights | tap-to-rotate | path connectivity | rotation quota |
+| Branch Pusher | drag-to-push | physical exposure | push budget (Sokoban) |
+| Pickle Chase | tap-to-check | fading trail (recency) | turns vs. moving target |
+| Press Your Luck | tap-to-reveal | visible upfront cost | gambling (risk tiers + tokens) |
+| Excavate | tap-to-dig (layered) | escalating quality per depth | depth-vs-breadth budget |
+| Nonogram | fill/cross cell | row/column run constraints | error count |
+| Tree Dungeon 2 | walk-to-cell | fog-of-war + hot/cold hybrid | exploration budget |
+| Tree Finder 2 | tap-to-reveal + buy-hint | hot/cold + directional present hints | moves + present economy |
+| Shake the Tree | swipe-to-displace | physical exposure (ornament layers) | swipe budget |
 
 ---
 
@@ -446,6 +460,8 @@ Decide what to add to the prototype queue.
 9. ✅ Excavate
 10. ✅ Tree Dungeon 2
 11. ✅ Tree Finder 2
+12. ✅ Shake the Tree
+13. ✅ Pickle Garland
 
 ---
 

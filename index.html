@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.20</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.21</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -485,6 +485,14 @@ const PROTOTYPES = [
     desc: 'Spend ornament tokens to reveal hidden cells. Save tokens — they\'re your score. Find the pickle before you run out!',
     available: true,
     create: (canvas, seed) => new PickleHuntGame(canvas, seed),
+  },
+  {
+    id: 'pickle-garland',
+    name: 'Pickle Garland',
+    icon: '🔗',
+    desc: 'String ornaments into a chain — Safe earns points, Break loses them. Bank to keep your score. The pickle hides in one of three chains.',
+    available: true,
+    create: (canvas, seed) => new PickleGarlandGame(canvas, seed),
   },
 ];
 
@@ -4822,6 +4830,473 @@ class PickleHuntGame {
     ctx.fillStyle = this.tokens <= 5 ? '#ff9090' : 'rgba(160,210,130,0.6)';
     ctx.fillText(`${this.tokens} token${this.tokens !== 1 ? 's' : ''} remaining`, w / 2, labelY);
     ctx.restore();
+  }
+}
+
+// ============================================================
+// PROTOTYPE: PICKLE GARLAND (pickle-garland)
+// ============================================================
+// Three hidden chains of ornaments. Tap to reveal the next —
+// Safe extends your chain score, Break wipes it. Bank any time
+// to keep what you have and start fresh. The pickle is hidden
+// in one chain — find it to win. Score as high as you can.
+// ============================================================
+
+class PickleGarlandGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx    = canvas.getContext('2d');
+    this.seed   = seed;
+
+    this.onScoreUpdate   = null;
+    this.onWin           = null;
+    this.onControlsChange = null;
+
+    const rng = makePRNG(seed ^ 0xCA4D1A4D);
+
+    this.CHAIN_COUNT = 3;
+    this.CHAIN_LEN   = 10;
+
+    // Pickle: which chain (0‑2) and which position (1‑7)
+    this.pickleChain = Math.floor(rng() * this.CHAIN_COUNT);
+    this.picklePos   = 1 + Math.floor(rng() * 7);
+
+    // Seeded colors per ornament position
+    const palette = [
+      '#e84040','#ffd700','#4090e8','#e040e8',
+      '#40e890','#e88040','#40d0e8','#e84090',
+      '#c0c0c0','#90e840',
+    ];
+    this.ornColors = [];
+    for (let c = 0; c < this.CHAIN_COUNT; c++) {
+      const row = [];
+      for (let i = 0; i < this.CHAIN_LEN; i++) row.push(palette[Math.floor(rng() * palette.length)]);
+      this.ornColors.push(row);
+    }
+
+    // Chain sequences: 'safe' | 'break' | 'pickle'
+    // Pickle chain: all positions before picklePos are guaranteed safe
+    this.chains = [];
+    for (let c = 0; c < this.CHAIN_COUNT; c++) {
+      const ch = [];
+      for (let i = 0; i < this.CHAIN_LEN; i++) {
+        if (c === this.pickleChain) {
+          if      (i < this.picklePos)  ch.push('safe');
+          else if (i === this.picklePos) ch.push('pickle');
+          else ch.push(rng() < 0.60 ? 'safe' : 'break');
+        } else {
+          ch.push(rng() < 0.65 ? 'safe' : 'break');
+        }
+      }
+      this.chains.push(ch);
+    }
+
+    // What has been uncovered so far (null = still hidden)
+    this.revealed = this.chains.map(() => new Array(this.CHAIN_LEN).fill(null));
+
+    // State machine
+    this.gameState    = 'playing'; // 'playing' | 'chain-end' | 'won' | 'game-over'
+    this.curChain     = 0;         // active chain index
+    this.displayChain = 0;         // chain shown in garland (lags during chain-end)
+    this.curPos       = 0;         // next position to reveal
+    this.chainScore   = 0;         // safe count pending in current chain
+    this.totalScore   = 0;         // banked total
+    this.history      = [];        // [{result:'banked'|'broken', score:n}]
+    this.lastResult   = null;
+
+    this.animating  = false;
+    this._animProg  = 1;
+    this._animPos   = -1;
+
+    // Star-rating ceiling (inverted: higher score → lower "moves")
+    this.totalCells = 20;
+
+    this._pulseRunning = true;
+    requestAnimationFrame(() => this._pulseTick());
+  }
+
+  _pulseTick() {
+    if (!this._pulseRunning) return;
+    if (!this.animating && this.gameState === 'playing') this.render();
+    requestAnimationFrame(() => this._pulseTick());
+  }
+
+  resize(w, h) {
+    this.canvas.width  = w;
+    this.canvas.height = h;
+    this.render();
+  }
+
+  handleTap(x, y) {
+    if (this.animating) return;
+    if (this.gameState === 'chain-end') {
+      this.displayChain = this.curChain;
+      this.gameState = 'playing';
+      this.onControlsChange && this.onControlsChange();
+      this.render();
+      return;
+    }
+    if (this.gameState !== 'playing') return;
+    this._revealNext();
+  }
+
+  bank() {
+    if (this.animating || this.gameState !== 'playing' || this.chainScore === 0) return;
+    const sc = this.chainScore;
+    this.totalScore += sc;
+    this.history.push({ result: 'banked', score: sc });
+    this.lastResult   = { result: 'banked', score: sc };
+    this.chainScore   = 0;
+    this.displayChain = this.curChain;
+    this.curChain++;
+    this.curPos = 0;
+
+    if (this.curChain >= this.CHAIN_COUNT) {
+      this.gameState = 'game-over';
+      this._pulseRunning = false;
+      this.onWin && this.onWin(Math.max(0, this.totalCells - this.totalScore));
+    } else {
+      this.gameState = 'chain-end';
+      this.onScoreUpdate   && this.onScoreUpdate(this.totalScore);
+      this.onControlsChange && this.onControlsChange();
+      this.render();
+    }
+  }
+
+  _revealNext() {
+    const c    = this.curChain;
+    const pos  = this.curPos;
+    const type = this.chains[c][pos];
+    this.curPos++;
+    this.revealed[c][pos] = type;
+    this._animPos = pos;
+
+    const dur = type === 'pickle' ? 800 : type === 'break' ? 480 : 200;
+    this._doAnim(dur, () => {
+      if (type === 'safe') {
+        this.chainScore++;
+        this.onScoreUpdate    && this.onScoreUpdate(this.totalScore + this.chainScore);
+        this.onControlsChange && this.onControlsChange();
+        this.render();
+
+      } else if (type === 'break') {
+        this.history.push({ result: 'broken', score: 0 });
+        this.lastResult   = { result: 'broken', score: 0 };
+        this.chainScore   = 0;
+        this.displayChain = this.curChain;
+        this.curChain++;
+        this.curPos = 0;
+        if (this.curChain >= this.CHAIN_COUNT) {
+          this.gameState = 'game-over';
+          this._pulseRunning = false;
+          this.onWin && this.onWin(this.totalCells);
+        } else {
+          this.gameState = 'chain-end';
+          this.onControlsChange && this.onControlsChange();
+          this.render();
+        }
+
+      } else if (type === 'pickle') {
+        this.totalScore += this.chainScore;
+        this.gameState = 'won';
+        this._pulseRunning = false;
+        this.onWin && this.onWin(Math.max(0, this.totalCells - this.totalScore));
+      }
+    });
+  }
+
+  _doAnim(dur, onDone) {
+    this.animating = true;
+    this._animProg = 0;
+    const t0 = performance.now();
+    const tick = (now) => {
+      this._animProg = Math.min((now - t0) / dur, 1);
+      this.render();
+      if (this._animProg < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        this.animating = false;
+        this._animPos  = -1;
+        onDone();
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  // ---- Layout helpers ----
+
+  _lo(W, H) {
+    const orn    = Math.min(Math.floor(W / 13), 24);
+    const gap    = Math.max(4, Math.floor(orn * 0.35));
+    const rowSep = Math.max(10, Math.floor(orn * 0.8));
+    const colW   = orn * 2 + gap;
+    const rowH   = orn * 2 + rowSep;
+    const gridW  = 5 * colW - gap;
+    const ox     = (W - gridW) / 2 + orn;
+    const oy     = Math.floor(H * 0.12) + orn + 16;
+    return { orn, gap, colW, rowH, gridW, ox, oy };
+  }
+
+  _pos(i, lo) {
+    return {
+      x: lo.ox + (i % 5) * lo.colW,
+      y: lo.oy + Math.floor(i / 5) * lo.rowH,
+    };
+  }
+
+  // ---- Rendering ----
+
+  render() {
+    const { ctx, canvas } = this;
+    const W = canvas.width, H = canvas.height;
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#1a3a0a';
+    ctx.fillRect(0, 0, W, H);
+
+    this._drawHeader(W, H);
+    this._drawGarland(W, H);
+    this._drawScoreRow(W, H);
+    if (this.gameState === 'chain-end') this._drawBanner(W, H);
+  }
+
+  _drawHeader(W, H) {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font         = 'bold 13px sans-serif';
+    ctx.fillStyle    = '#90b870';
+    let label;
+    if      (this.gameState === 'won')       label = '🥒 Found it!';
+    else if (this.gameState === 'game-over') label = 'No more chains';
+    else label = `Chain ${Math.min(this.displayChain + 1, this.CHAIN_COUNT)} of ${this.CHAIN_COUNT}`;
+    ctx.fillText(label, W / 2, 10);
+    ctx.restore();
+  }
+
+  _drawGarland(W, H) {
+    const ctx = this.ctx;
+    const lo  = this._lo(W, H);
+    const c   = this.displayChain;
+
+    // String — continuous line through all positions
+    ctx.strokeStyle = '#7a5020';
+    ctx.lineWidth   = 2;
+    ctx.beginPath();
+    for (let i = 0; i < this.CHAIN_LEN; i++) {
+      const p = this._pos(i, lo);
+      if (i === 0) ctx.moveTo(p.x, p.y + lo.orn * 0.38);
+      else         ctx.lineTo(p.x, p.y + lo.orn * 0.38);
+    }
+    ctx.stroke();
+
+    // Ornaments
+    for (let i = 0; i < this.CHAIN_LEN; i++) {
+      const { x, y } = this._pos(i, lo);
+
+      let state;
+      if (this.revealed[c][i] !== null) {
+        state = this.revealed[c][i];
+      } else if (
+        this.gameState === 'playing' &&
+        c === this.curChain &&
+        i === this.curPos &&
+        !this.animating
+      ) {
+        state = 'next';
+      } else {
+        state = 'hidden';
+      }
+
+      const isMidAnim = this.animating && c === this.curChain && i === this._animPos;
+      this._drawOrn(x, y, lo.orn, state, this.ornColors[c][i], isMidAnim ? this._animProg : 1);
+    }
+  }
+
+  _drawOrn(x, y, r, state, color, prog) {
+    const ctx = this.ctx;
+    const scale = (state === 'safe' || state === 'break' || state === 'pickle')
+      ? 0.3 + prog * 0.7 : 1;
+
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    if (state === 'hidden') {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle   = '#1e3a14';
+      ctx.fill();
+      ctx.strokeStyle = '#3a6020';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+
+    } else if (state === 'next') {
+      const p = 0.62 + 0.38 * Math.sin(Date.now() / 370);
+      ctx.globalAlpha = p;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle   = '#2a5a18';
+      ctx.fill();
+      ctx.strokeStyle = '#80e030';
+      ctx.lineWidth   = 2.5;
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.font         = `bold ${Math.floor(r * 0.78)}px sans-serif`;
+      ctx.fillStyle    = '#80e030';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('?', 0, 1);
+
+    } else if (state === 'safe') {
+      // Cap
+      ctx.fillStyle = '#999';
+      ctx.fillRect(-3, -r - 5, 6, 5);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle   = color;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+      // Shine
+      ctx.beginPath();
+      ctx.arc(-r * 0.3, -r * 0.28, r * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.42)';
+      ctx.fill();
+
+    } else if (state === 'break') {
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle   = '#241212';
+      ctx.fill();
+      ctx.strokeStyle = '#5a2020';
+      ctx.lineWidth   = 1.5;
+      ctx.stroke();
+      ctx.strokeStyle = '#cc3333';
+      ctx.lineWidth   = 2.5;
+      ctx.lineCap     = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.38, -r * 0.38);
+      ctx.lineTo( r * 0.38,  r * 0.38);
+      ctx.moveTo( r * 0.38, -r * 0.38);
+      ctx.lineTo(-r * 0.38,  r * 0.38);
+      ctx.stroke();
+
+    } else if (state === 'pickle') {
+      // Cap
+      ctx.fillStyle = '#999';
+      ctx.fillRect(-3, -r - 5, 6, 5);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fillStyle   = '#264d18';
+      ctx.fill();
+      ctx.strokeStyle = '#ffd700';
+      ctx.lineWidth   = 2.5;
+      ctx.stroke();
+      ctx.font         = `${Math.floor(r * 1.15)}px sans-serif`;
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('🥒', 0, 2);
+    }
+
+    ctx.restore();
+  }
+
+  _drawScoreRow(W, H) {
+    const ctx = this.ctx;
+    const lo  = this._lo(W, H);
+    const baseY = lo.oy + lo.rowH * 2 - lo.orn + 14;
+
+    ctx.save();
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+
+    if (this.history.length > 0) {
+      const parts = this.history.map((h, i) =>
+        h.result === 'banked' ? `Ch${i+1}:🏦${h.score}` : `Ch${i+1}:✂️`
+      );
+      ctx.font      = '11px sans-serif';
+      ctx.fillStyle = 'rgba(144,184,112,0.55)';
+      ctx.fillText(parts.join('   '), W / 2, baseY);
+    }
+
+    const scoreY = baseY + (this.history.length > 0 ? 20 : 0);
+    const displayScore = this.totalScore + (this.gameState === 'playing' ? this.chainScore : 0);
+    ctx.font      = 'bold 16px sans-serif';
+    ctx.fillStyle = '#ffd700';
+    ctx.fillText(`${displayScore} pts`, W / 2, scoreY);
+
+    ctx.restore();
+  }
+
+  _drawBanner(W, H) {
+    const ctx = this.ctx;
+    const lo  = this._lo(W, H);
+    const bw  = Math.floor(W * 0.8);
+    const bh  = 72;
+    const bx  = (W - bw) / 2;
+    const by  = lo.oy + lo.rowH * 2 - lo.orn + 52;
+
+    ctx.save();
+    ctx.fillStyle = 'rgba(6,18,4,0.90)';
+    roundRect(ctx, bx, by, bw, bh, 10);
+    ctx.fill();
+    ctx.strokeStyle = '#3a6020';
+    ctx.lineWidth   = 1;
+    roundRect(ctx, bx, by, bw, bh, 10);
+    ctx.stroke();
+
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'top';
+
+    if (this.lastResult) {
+      const banked = this.lastResult.result === 'banked';
+      ctx.font      = 'bold 17px sans-serif';
+      ctx.fillStyle = banked ? '#ffd700' : '#cc4444';
+      ctx.fillText(
+        banked
+          ? `Banked ${this.lastResult.score} pt${this.lastResult.score !== 1 ? 's' : ''} 🏦`
+          : 'Chain broken ✂️ — 0 pts',
+        W / 2, by + 11
+      );
+    }
+
+    ctx.font      = '13px sans-serif';
+    ctx.fillStyle = '#90b870';
+    ctx.fillText(`Tap anywhere for Chain ${this.curChain + 1}`, W / 2, by + 41);
+    ctx.restore();
+  }
+
+  renderCustomControls(bar) {
+    bar.innerHTML = '';
+    bar.style.cssText = 'display:flex;gap:8px;padding:6px 12px;align-items:center;justify-content:space-between';
+
+    if (this.gameState === 'won' || this.gameState === 'game-over') return;
+
+    if (this.gameState === 'chain-end') {
+      const hint = document.createElement('span');
+      hint.style.cssText = 'flex:1;text-align:center;color:#7aaa5a;font-size:0.83rem';
+      hint.textContent = 'Tap anywhere to start next chain';
+      bar.appendChild(hint);
+      return;
+    }
+
+    const info = document.createElement('span');
+    info.style.cssText = 'flex:1;color:#90b870;font-size:0.82rem';
+    info.textContent = this.curPos === 0
+      ? `Chain ${this.curChain + 1} — tap to reveal`
+      : `${this.chainScore} safe so far`;
+    bar.appendChild(info);
+
+    if (this.chainScore > 0 && !this.animating) {
+      const btn = document.createElement('button');
+      btn.className = 'ctrl-btn';
+      btn.style.minWidth = '44px';
+      btn.textContent = `🏦 Bank (${this.chainScore})`;
+      btn.addEventListener('click', () => this.bank());
+      bar.appendChild(btn);
+    }
   }
 }
 
