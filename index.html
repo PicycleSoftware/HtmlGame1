@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.19</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.20</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -477,6 +477,14 @@ const PROTOTYPES = [
     desc: 'Swipe to shake ornaments aside and find the hidden pickle. Ornaments drift back — tap it fast when you spot it!',
     available: true,
     create: (canvas, seed) => new ShakeTreeGame(canvas, seed),
+  },
+  {
+    id: 'pickle-hunt',
+    name: 'Pickle Hunt',
+    icon: '🪙',
+    desc: 'Spend ornament tokens to reveal hidden cells. Save tokens — they\'re your score. Find the pickle before you run out!',
+    available: true,
+    create: (canvas, seed) => new PickleHuntGame(canvas, seed),
   },
 ];
 
@@ -4384,6 +4392,436 @@ class ShakeTreeGame {
       ctx.fillText('Swipe to shake ornaments · tap the pickle when you find it!', w / 2, h - 8);
       ctx.restore();
     }
+  }
+}
+
+// ============================================================
+// PROTOTYPE: PICKLE HUNT
+// ============================================================
+// Ornament tokens reveal hidden cells or stay unspent as score.
+// Same resource, two uses, one decision per tap.
+// Find the pickle — the earlier you find it, the more tokens saved.
+// Mechanic: Fog of War + Scarcity Management (#97)
+// ============================================================
+
+class PickleHuntGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.seed = seed;
+    this.won = false;
+    this.onScoreUpdate = null;
+    this.onWin = null;
+    this.onControlsChange = null;
+    this.animating = false;
+    this.revealAnim = null;
+    this.cs = 0;
+
+    this.COLS = 9;
+    this.ROWS = 8;
+    this.ranges = [[4,4],[3,5],[2,6],[1,7],[2,6],[1,7],[0,8],[3,5]];
+    this._buildTreeCells();
+
+    const rng = makePRNG(seed ^ 0xBADFACED);
+
+    // Pickle — interior cells only (not star row, not trunk)
+    const pickable = [...this.treeCells].filter(k => {
+      const r = +k.split(',')[0];
+      return r > 0 && r < this.ROWS - 1;
+    });
+    for (let i = pickable.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pickable[i], pickable[j]] = [pickable[j], pickable[i]];
+    }
+    this.pickleKey = pickable[0];
+    this.totalCells = pickable.length;  // 36
+    this.tokens     = pickable.length;  // starts at 36
+    this.revealsUsed = 0;
+
+    // Cell states — trunk and star pre-revealed, everything else fogged
+    this.cellState = {};
+    this.starKey = '0,4';
+    for (const k of this.treeCells) {
+      const r = +k.split(',')[0];
+      this.cellState[k] = (r === 0 || r === this.ROWS - 1) ? 'revealed' : 'hidden';
+    }
+
+    this._computeDistances();
+
+    // Per-cell ornament color for revealed non-pickle cells
+    const COLORS = ['#e03030','#e8b010','#3090e0','#c040a0','#30b060','#e06020'];
+    this.cellColor = {};
+    for (const k of pickable) {
+      this.cellColor[k] = COLORS[Math.floor(rng() * COLORS.length)];
+    }
+    // Token icon colors
+    this.tokenColors = Array.from({length: this.totalCells}, () =>
+      COLORS[Math.floor(rng() * COLORS.length)]
+    );
+  }
+
+  _buildTreeCells() {
+    this.treeCells = new Set();
+    for (let r = 0; r < this.ROWS; r++) {
+      const [lo, hi] = this.ranges[r];
+      for (let c = lo; c <= hi; c++) this.treeCells.add(`${r},${c}`);
+    }
+  }
+
+  _computeDistances() {
+    this.dist = {};
+    const q = [this.pickleKey];
+    this.dist[this.pickleKey] = 0;
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
+    while (q.length) {
+      const k = q.shift();
+      const [r, c] = k.split(',').map(Number);
+      for (const [dr, dc] of dirs) {
+        const nk = `${r+dr},${c+dc}`;
+        if (this.treeCells.has(nk) && !(nk in this.dist)) {
+          this.dist[nk] = this.dist[k] + 1;
+          q.push(nk);
+        }
+      }
+    }
+  }
+
+  resize(w, h) {
+    this.canvas.width = w;
+    this.canvas.height = h;
+
+    // Token grid: 4 rows × 9 cols
+    const tCols = 9, tRows = 4, tGap = 3;
+    const rFromH = Math.floor((Math.min(h * 0.13, 64) - tGap * (tRows - 1)) / tRows / 2);
+    const rFromW = Math.floor((w - 24 - tGap * (tCols - 1)) / tCols / 2);
+    this.tR   = Math.max(5, Math.min(rFromH, rFromW, 9));
+    this.tGap = tGap;
+    const tokenAreaH = tRows * (this.tR * 2 + tGap) - tGap + 22; // icons + label
+
+    const usableH = h - tokenAreaH;
+    const cellW = (w - 16) / this.COLS;
+    const cellH = (usableH - 16) / this.ROWS;
+    this.cs = Math.floor(Math.min(cellW, cellH, 58));
+    this.ox = Math.floor((w - this.cs * this.COLS) / 2);
+    this.oy = Math.floor((usableH - this.cs * this.ROWS) / 2);
+    this.tokenAreaY = usableH + 8;
+
+    this.render();
+  }
+
+  handleTap(x, y) {
+    if (this.won || this.animating) return;
+    for (const key of this.treeCells) {
+      if (this.cellState[key] !== 'hidden') continue;
+      const [r, c] = key.split(',').map(Number);
+      if (r === 0 || r === this.ROWS - 1) continue; // star/trunk not tappable
+      const tx = this.ox + c * this.cs;
+      const ty = this.oy + r * this.cs;
+      if (x >= tx && x < tx + this.cs && y >= ty && y < ty + this.cs) {
+        this._revealCell(key);
+        return;
+      }
+    }
+  }
+
+  _revealCell(key) {
+    const tokensNow = this.tokens;
+    this.revealsUsed++;
+    this.tokens--;
+    this.cellState[key] = 'revealed';
+    if (this.onScoreUpdate) this.onScoreUpdate(this.revealsUsed);
+
+    const isPickle = key === this.pickleKey;
+
+    if (tokensNow === 1) {
+      // Last token — always the pickle — full ceremony
+      this._startAnim(key, 'last', 1900);
+    } else if (isPickle) {
+      // Found early — celebrate
+      this._startAnim(key, 'pickle', 750);
+    } else if (tokensNow <= 3) {
+      // Scarce — slow tense reveal
+      this._startAnim(key, 'slow', 420);
+    } else {
+      this.render();
+    }
+  }
+
+  _startAnim(key, phase, duration) {
+    this.animating = true;
+    this.revealAnim = { key, phase, startTime: Date.now(), duration };
+    requestAnimationFrame(() => this._animTick());
+  }
+
+  _animTick() {
+    if (!this.revealAnim) return;
+    const { startTime, duration, key, phase } = this.revealAnim;
+    const t = Math.min((Date.now() - startTime) / duration, 1);
+    this.render(t);
+    if (t < 1) {
+      requestAnimationFrame(() => this._animTick());
+    } else {
+      this.revealAnim = null;
+      this.animating = false;
+      if (phase === 'last' || phase === 'pickle') {
+        this.won = true;
+        this.render();
+        setTimeout(() => { if (this.onWin) this.onWin(this.revealsUsed); }, 350);
+      } else {
+        this.render();
+      }
+    }
+  }
+
+  _distColor(d) {
+    const c = ['#ff2222','#ff6600','#ffaa00','#ccdd00','#66cc44','#44aadd','#4477ff'];
+    return c[Math.min(d - 1, c.length - 1)];
+  }
+
+  _distLabel(d) {
+    if (d === 1) return 'Very\nclose';
+    if (d <= 3)  return 'Closer';
+    if (d <= 5)  return 'Far';
+    return 'Very\nfar';
+  }
+
+  render(animT) {
+    const { ctx, canvas, cs, ox, oy } = this;
+    if (!cs) return;
+    const w = canvas.width, h = canvas.height;
+
+    ctx.fillStyle = '#1a3a0a';
+    ctx.fillRect(0, 0, w, h);
+
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      const x = ox + c * cs, y = oy + r * cs;
+      const gap = 3;
+      const state  = this.cellState[key];
+      const isPickle = key === this.pickleKey;
+      const isTrunk  = r === this.ROWS - 1;
+      const isStar   = key === this.starKey;
+
+      ctx.save();
+      roundRect(ctx, x + gap, y + gap, cs - gap * 2, cs - gap * 2, 5);
+
+      if (state === 'hidden') {
+        ctx.fillStyle = '#0e2208';
+        ctx.fill();
+        ctx.strokeStyle = '#1a3810';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      } else {
+        if (isTrunk) {
+          ctx.fillStyle = '#5a3010';
+          ctx.fill();
+        } else if (isStar) {
+          ctx.fillStyle = '#2e5a1a';
+          ctx.fill();
+        } else if (isPickle && this.won) {
+          ctx.fillStyle = '#1a3a0a';
+          ctx.fill();
+          ctx.strokeStyle = '#ffd700';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+        } else if (!isPickle) {
+          const d = this.dist[key];
+          const col = this._distColor(d);
+          ctx.fillStyle = col + '1a';
+          ctx.fill();
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          // pickle cell during animation (not yet won)
+          ctx.fillStyle = '#1a3a0a';
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+
+      // Cell content
+      const cx = x + cs / 2, cy = y + cs / 2;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      if (isTrunk && state === 'revealed') {
+        ctx.fillStyle = '#8b5e3c';
+        ctx.fillRect(cx - cs * 0.14, y + gap + 2, cs * 0.28, cs - gap * 2 - 4);
+      } else if (isStar) {
+        ctx.font = `${Math.floor(cs * 0.6)}px serif`;
+        ctx.fillText('⭐', cx, cy);
+      } else if (state === 'revealed' && !isPickle) {
+        // Small ornament dot
+        const oR = Math.max(3, cs * 0.13);
+        const oY = cy - cs * 0.14;
+        ctx.beginPath();
+        ctx.arc(cx, oY, oR, 0, Math.PI * 2);
+        ctx.fillStyle = this.cellColor[key] || '#e03030';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Shine
+        ctx.beginPath();
+        ctx.arc(cx - oR * 0.3, oY - oR * 0.3, oR * 0.22, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.48)';
+        ctx.fill();
+        // Hint text
+        const d = this.dist[key];
+        const label = this._distLabel(d);
+        const lines = label.split('\n');
+        const fz = Math.max(8, Math.floor(cs * 0.17));
+        ctx.font = `bold ${fz}px sans-serif`;
+        ctx.fillStyle = this._distColor(d);
+        const lh = fz + 1;
+        const baseY = cy + cs * 0.1;
+        const sy = baseY - ((lines.length - 1) * lh) / 2;
+        lines.forEach((l, i) => ctx.fillText(l, cx, sy + i * lh));
+      } else if (state === 'revealed' && isPickle && this.won) {
+        ctx.font = `${Math.floor(cs * 0.65)}px serif`;
+        ctx.fillText('🥒', cx, cy);
+      }
+      ctx.restore();
+    }
+
+    // Animation overlay
+    if (this.revealAnim && animT !== undefined) {
+      this._drawRevealAnim(animT);
+    }
+
+    // Token grid
+    this._drawTokens();
+
+    // First-move hint
+    if (!this.won && this.revealsUsed === 0) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.font = '12px sans-serif';
+      ctx.fillStyle = 'rgba(160,210,130,0.8)';
+      ctx.fillText('Tap to reveal · unspent tokens are your score!', w / 2, this.tokenAreaY - 4);
+      ctx.restore();
+    }
+  }
+
+  _drawRevealAnim(t) {
+    const { ctx, canvas, cs, ox, oy } = this;
+    const w = canvas.width, h = canvas.height;
+    const { key, phase } = this.revealAnim;
+    const [r, c] = key.split(',').map(Number);
+    const x = ox + c * cs, y = oy + r * cs;
+    const cx = x + cs / 2, cy = y + cs / 2;
+    const gap = 3;
+    const fog = (alpha) => {
+      ctx.save();
+      roundRect(ctx, x + gap, y + gap, cs - gap * 2, cs - gap * 2, 5);
+      ctx.fillStyle = `rgba(10,28,8,${alpha})`;
+      ctx.fill();
+      ctx.restore();
+    };
+
+    if (phase === 'slow') {
+      fog(Math.max(0, (1 - t) * 0.78));
+
+    } else if (phase === 'pickle') {
+      fog(Math.max(0, (1 - t * 1.6) * 0.78));
+      if (t > 0.25) {
+        const gt = (t - 0.25) / 0.75;
+        ctx.save();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#90ee90'; ctx.shadowBlur = 22 * gt;
+        ctx.globalAlpha = gt;
+        ctx.font = `${Math.floor(cs * 0.65)}px serif`;
+        ctx.fillText('🥒', cx, cy);
+        ctx.restore();
+      }
+
+    } else if (phase === 'last') {
+      // 0–0.35: fog held + "This must be it..." fades in
+      // 0.35–0.70: fog lifts
+      // 0.70–1.0: pickle glows in
+      const fogAlpha = t < 0.35 ? 0.82
+                     : Math.max(0, 0.82 * (1 - (t - 0.35) / 0.35));
+      fog(fogAlpha);
+
+      if (t < 0.58) {
+        const ta = t < 0.12 ? t / 0.12
+                 : t < 0.42 ? 1
+                 : Math.max(0, 1 - (t - 0.42) / 0.16);
+        ctx.save();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#ffd700'; ctx.shadowBlur = 18;
+        ctx.fillStyle = `rgba(255,215,0,${ta})`;
+        ctx.font = `bold ${Math.floor(w * 0.052)}px sans-serif`;
+        ctx.fillText('This must be it...', w / 2, h * 0.44);
+        ctx.restore();
+      }
+
+      if (t > 0.68) {
+        const gt = (t - 0.68) / 0.32;
+        ctx.save();
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#90ee90'; ctx.shadowBlur = 26 * gt;
+        ctx.globalAlpha = gt;
+        ctx.font = `${Math.floor(cs * 0.72)}px serif`;
+        ctx.fillText('🥒', cx, cy);
+        ctx.restore();
+      }
+    }
+  }
+
+  _drawTokens() {
+    const { ctx, canvas } = this;
+    const w = canvas.width;
+    const cols = 9, rows = 4;
+    const r = this.tR || 7, gap = this.tGap || 3;
+    const colW = r * 2 + gap, rowH = r * 2 + gap;
+    const gridW = cols * colW - gap;
+    const startX = Math.floor((w - gridW) / 2) + r;
+    const startY = (this.tokenAreaY || 0) + r;
+
+    for (let i = 0; i < this.totalCells; i++) {
+      const col = i % cols, row = Math.floor(i / cols);
+      const x = startX + col * colW;
+      const y = startY + row * rowH;
+      const spent = i < this.revealsUsed;
+      const scarce = !spent && this.tokens <= 3;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      if (!spent) {
+        ctx.fillStyle = this.tokenColors[i];
+        ctx.fill();
+        ctx.strokeStyle = scarce ? '#ffd700' : 'rgba(255,255,255,0.2)';
+        ctx.lineWidth  = scarce ? 1.5 : 0.8;
+        ctx.stroke();
+        // Shine dot
+        ctx.beginPath();
+        ctx.arc(x - r * 0.28, y - r * 0.28, r * 0.2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.44)';
+        ctx.fill();
+      } else {
+        ctx.fillStyle = 'rgba(12,28,10,0.55)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(35,60,25,0.25)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Remaining count label
+    const labelY = startY + (rows - 1) * rowH + r + 5;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = 'bold 11px sans-serif';
+    ctx.fillStyle = this.tokens <= 5 ? '#ff9090' : 'rgba(160,210,130,0.6)';
+    ctx.fillText(`${this.tokens} token${this.tokens !== 1 ? 's' : ''} remaining`, w / 2, labelY);
+    ctx.restore();
   }
 }
 
