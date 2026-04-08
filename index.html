@@ -5340,23 +5340,27 @@ class LotteryScatcherGame {
     const rng = makePRNG(this.seed);
 
     // ---- Box 1: pick 5 of 9, all winners ----
-    // Distribution: 3×(+1), 5×(+2), 1×(+3) → min 7, max 11, avg ~9
-    this.box1Values = this._shuffle([1,1,1,2,2,2,2,2,3], rng);
+    // Distribution: 1×(+1), 6×(+2), 2×(+3) → min 9, max 12, avg ~10.6
+    this.box1Values = this._shuffle([1,2,2,2,2,2,2,3,3], rng);
     this.box1Revealed = new Array(9).fill(false);
     this.box1PicksLeft = 5;
     this.box1Total = 0;
     this._box1Rects = null;
+    this.box1PlayerPicked = new Set(); // indices chosen by player
+    this.box1FlipAll = false;
 
     // ---- Box 2: scratch til you strike gold ----
-    // 12 cells: prize types at positions 1–11 (never position 0)
-    const prizePos = this._shuffle([1,2,3,4,5,6,7,8,9,10,11], rng).slice(0, 4);
+    // 8 cells: 4 prizes at positions 1–7 (never position 0), 4 coal
+    const prizePos = this._shuffle([1,2,3,4,5,6,7], rng).slice(0, 4);
     const prizes   = this._shuffle(['+3','+4','1.5x','2x'], rng);
-    this.box2Cells = new Array(12).fill('coal');
+    this.box2Cells = new Array(8).fill('coal');
     for (let i = 0; i < 4; i++) this.box2Cells[prizePos[i]] = prizes[i];
-    this.box2Revealed = new Array(12).fill(false);
+    this.box2Revealed = new Array(8).fill(false);
     this.box2Done  = false;
     this.box2Prize = null;
     this._box2Rects = null;
+    this.box2PlayerPicked = new Set();
+    this.box2FlipAll = false;
 
     // ---- Box 3: optional modifier ----
     // One modifier hidden among 7 coal cells (never at position 0)
@@ -5378,6 +5382,8 @@ class LotteryScatcherGame {
     this._box3Rects  = null;
     this._box3SkipRect = null;
     this._box3PlayRect = null;
+    this.box3PlayerPicked = new Set();
+    this.box3FlipAll = false;
 
     // ---- Scratch budget ----
     this.scratchBudget = 0;
@@ -5614,8 +5620,9 @@ class LotteryScatcherGame {
 
   // ---- scratch-cell drawing helper ----
 
-  _drawCell(rx, ry, rw, rh, revealed, content, type) {
+  _drawCell(rx, ry, rw, rh, revealed, content, type, dimmed = false) {
     // type: 'value' | 'coal' | 'prize' | 'modifier'
+    // dimmed: auto-revealed after box close — show content but muted
     const { ctx } = this;
     roundRect(ctx, rx, ry, rw, rh, 7);
     if (!revealed) {
@@ -5664,6 +5671,13 @@ class LotteryScatcherGame {
       ctx.font = `${Math.floor(rh * 0.20)}px serif`;
       ctx.fillText(good ? '⭐' : '💀', cx, cy + rh * 0.30);
     }
+
+    // Dim overlay for auto-revealed (not-chosen) cells
+    if (dimmed) {
+      roundRect(ctx, rx, ry, rw, rh, 7);
+      ctx.fillStyle = 'rgba(0,0,0,0.52)';
+      ctx.fill();
+    }
   }
 
   _gridLayout(cols, count, maxGridW, cellMax, boxTop, boxH, labelH) {
@@ -5703,7 +5717,9 @@ class LotteryScatcherGame {
     this._box1Rects = rects;
     for (let i = 0; i < 9; i++) {
       const rc = rects[i];
-      this._drawCell(rc.x, rc.y, rc.w, rc.h, this.box1Revealed[i], this.box1Values[i], 'value');
+      const show   = this.box1Revealed[i] || this.box1FlipAll;
+      const dimmed = this.box1FlipAll && !this.box1PlayerPicked.has(i);
+      this._drawCell(rc.x, rc.y, rc.w, rc.h, show, this.box1Values[i], 'value', dimmed);
     }
     if (this.box1Total > 0) {
       const lastRc = rects[8];
@@ -5725,13 +5741,15 @@ class LotteryScatcherGame {
     ctx.font = '10px sans-serif'; ctx.fillStyle = '#7aaa5a';
     ctx.fillText('First prize you find — you keep it!', W / 2, boxTop + 36);
 
-    const rects = this._gridLayout(4, 12, Math.min(W - 24, 300), 72, boxTop, boxH, 54);
+    const rects = this._gridLayout(4, 8, Math.min(W - 24, 300), 72, boxTop, boxH, 54);
     this._box2Rects = rects;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 8; i++) {
       const rc = rects[i];
       const isCoal = this.box2Cells[i] === 'coal';
-      this._drawCell(rc.x, rc.y, rc.w, rc.h, this.box2Revealed[i],
-        this.box2Cells[i], isCoal ? 'coal' : 'prize');
+      const show   = this.box2Revealed[i] || this.box2FlipAll;
+      const dimmed = this.box2FlipAll && !this.box2PlayerPicked.has(i);
+      this._drawCell(rc.x, rc.y, rc.w, rc.h, show,
+        this.box2Cells[i], isCoal ? 'coal' : 'prize', dimmed);
     }
   }
 
@@ -5792,8 +5810,10 @@ class LotteryScatcherGame {
     for (let i = 0; i < 8; i++) {
       const rc = rects[i];
       const isCoal = this.box3Cells[i] === 'coal';
-      this._drawCell(rc.x, rc.y, rc.w, rc.h, this.box3Revealed[i],
-        this.box3Cells[i], isCoal ? 'coal' : 'modifier');
+      const show   = this.box3Revealed[i] || this.box3FlipAll;
+      const dimmed = this.box3FlipAll && !this.box3PlayerPicked.has(i);
+      this._drawCell(rc.x, rc.y, rc.w, rc.h, show,
+        this.box3Cells[i], isCoal ? 'coal' : 'modifier', dimmed);
     }
   }
 
@@ -5968,18 +5988,21 @@ class LotteryScatcherGame {
   }
 
   _tapBox1(px, py) {
-    if (this.box1PicksLeft <= 0) return;
+    if (this.box1FlipAll || this.box1PicksLeft <= 0) return;
     for (let i = 0; i < 9; i++) {
       if (this.box1Revealed[i]) continue;
       const rc = this._box1Rects && this._box1Rects[i];
       if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
       this.box1Revealed[i] = true;
+      this.box1PlayerPicked.add(i);
       const v = this.box1Values[i];
       this.box1Total += v;
       this.box1PicksLeft--;
       this._applyBudget(`+${v}`);
       if (this.box1PicksLeft === 0) {
-        setTimeout(() => { this.phase = 1; this.render(); }, 520);
+        this.box1FlipAll = true;
+        this.render();
+        setTimeout(() => { this.phase = 1; this.render(); }, 1300);
       } else {
         this.render();
       }
@@ -5988,18 +6011,21 @@ class LotteryScatcherGame {
   }
 
   _tapBox2(px, py) {
-    for (let i = 0; i < 12; i++) {
+    if (this.box2FlipAll) return;
+    for (let i = 0; i < 8; i++) {
       if (this.box2Revealed[i]) continue;
       const rc = this._box2Rects && this._box2Rects[i];
       if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
       this.box2Revealed[i] = true;
+      this.box2PlayerPicked.add(i);
       const cell = this.box2Cells[i];
       if (cell !== 'coal') {
         this.box2Done  = true;
         this.box2Prize = cell;
+        this.box2FlipAll = true;
         this.render();
         this._applyBudget(cell);
-        setTimeout(() => { this.phase = 2; this.render(); }, 850);
+        setTimeout(() => { this.phase = 2; this.render(); }, 1300);
       } else {
         this.render();
       }
@@ -6020,18 +6046,21 @@ class LotteryScatcherGame {
   }
 
   _tapBox3Scratch(px, py) {
+    if (this.box3FlipAll) return;
     for (let i = 0; i < 8; i++) {
       if (this.box3Revealed[i]) continue;
       const rc = this._box3Rects && this._box3Rects[i];
       if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
       this.box3Revealed[i] = true;
+      this.box3PlayerPicked.add(i);
       const cell = this.box3Cells[i];
       if (cell !== 'coal') {
         this.box3Done    = true;
         this.box3Applied = cell;
+        this.box3FlipAll = true;
         this.render();
         this._applyBudget(cell);
-        setTimeout(() => { this._enterCentral(); }, 900);
+        setTimeout(() => { this._enterCentral(); }, 1300);
       } else {
         this.render();
       }
