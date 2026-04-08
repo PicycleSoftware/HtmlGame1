@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.22</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.23</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -5350,12 +5350,12 @@ class LotteryScatcherGame {
     this.box1FlipAll = false;
 
     // ---- Box 2: scratch til you strike gold ----
-    // 8 cells: 4 prizes at positions 1–7 (never position 0), 4 coal
-    const prizePos = this._shuffle([1,2,3,4,5,6,7], rng).slice(0, 4);
+    // 3×4 = 12 cells: 4 prizes at positions 1–11 (never position 0), 8 coal
+    const prizePos = this._shuffle([1,2,3,4,5,6,7,8,9,10,11], rng).slice(0, 4);
     const prizes   = this._shuffle(['+3','+4','1.5x','2x'], rng);
-    this.box2Cells = new Array(8).fill('coal');
+    this.box2Cells = new Array(12).fill('coal');
     for (let i = 0; i < 4; i++) this.box2Cells[prizePos[i]] = prizes[i];
-    this.box2Revealed = new Array(8).fill(false);
+    this.box2Revealed = new Array(12).fill(false);
     this.box2Done  = false;
     this.box2Prize = null;
     this._box2Rects = null;
@@ -5363,19 +5363,15 @@ class LotteryScatcherGame {
     this.box2FlipAll = false;
 
     // ---- Box 3: optional modifier ----
-    // One modifier hidden among 7 coal cells (never at position 0)
-    const modOpts    = ['0.5x','1.5x','2x','3x'];
-    const modWeights = [0.30, 0.30, 0.25, 0.15];
-    let roll = rng(), cum = 0, modIdx = modOpts.length - 1;
-    for (let i = 0; i < modWeights.length; i++) {
-      cum += modWeights[i];
-      if (roll < cum) { modIdx = i; break; }
-    }
-    this.box3Modifier = modOpts[modIdx];
-    const box3ModPos  = Math.floor(rng() * 7) + 1; // positions 1–7
-    this.box3Cells    = new Array(8).fill('coal');
-    this.box3Cells[box3ModPos] = this.box3Modifier;
-    this.box3Revealed = new Array(8).fill(false);
+    // 4×4 = 16 cells: 68.75% positive (11), 18.75% coal (3), 12.5% negative (2)
+    // Multiple of each type — first non-coal found is kept.
+    // Distribution: 4×(1.5x), 4×(2x), 3×(3x), 3×coal, 2×(0.5x)
+    this.box3Cells    = this._shuffle(
+      ['0.5x','0.5x','coal','coal','coal',
+       '1.5x','1.5x','1.5x','1.5x',
+       '2x','2x','2x','2x',
+       '3x','3x','3x'], rng);
+    this.box3Revealed = new Array(16).fill(false);
     this.box3Done    = false;
     this.box3Skipped = false;
     this.box3Applied = null;
@@ -5741,9 +5737,9 @@ class LotteryScatcherGame {
     ctx.font = '10px sans-serif'; ctx.fillStyle = '#7aaa5a';
     ctx.fillText('First prize you find — you keep it!', W / 2, boxTop + 36);
 
-    const rects = this._gridLayout(4, 8, Math.min(W - 24, 300), 72, boxTop, boxH, 54);
+    const rects = this._gridLayout(3, 12, Math.min(W - 24, 270), 68, boxTop, boxH, 54);
     this._box2Rects = rects;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) {
       const rc = rects[i];
       const isCoal = this.box2Cells[i] === 'coal';
       const show   = this.box2Revealed[i] || this.box2FlipAll;
@@ -5805,9 +5801,9 @@ class LotteryScatcherGame {
     ctx.font = '10px sans-serif'; ctx.fillStyle = '#7aaa5a';
     ctx.fillText('Scratch until you find your modifier!', W / 2, boxTop + 22);
 
-    const rects = this._gridLayout(4, 8, Math.min(W - 24, 300), 72, boxTop, boxH, 40);
+    const rects = this._gridLayout(4, 16, Math.min(W - 24, 300), 60, boxTop, boxH, 40);
     this._box3Rects = rects;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
       const rc = rects[i];
       const isCoal = this.box3Cells[i] === 'coal';
       const show   = this.box3Revealed[i] || this.box3FlipAll;
@@ -6012,7 +6008,7 @@ class LotteryScatcherGame {
 
   _tapBox2(px, py) {
     if (this.box2FlipAll) return;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 12; i++) {
       if (this.box2Revealed[i]) continue;
       const rc = this._box2Rects && this._box2Rects[i];
       if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
@@ -6047,7 +6043,7 @@ class LotteryScatcherGame {
 
   _tapBox3Scratch(px, py) {
     if (this.box3FlipAll) return;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 16; i++) {
       if (this.box3Revealed[i]) continue;
       const rc = this._box3Rects && this._box3Rects[i];
       if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
