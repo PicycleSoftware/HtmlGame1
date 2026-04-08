@@ -167,8 +167,10 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 - No flag mode (cleaner UX; presents replace the intel-gathering role)
 - Score = total moves (cell taps + present costs)
 
-### ⬜ 10. Lottery Scratcher (`scratcher`)
+### ⬜ 10. Lottery Scratcher (`scratcher`) — NEXT BUILD
 **Concept:** Classic lottery scratcher on the Christmas tree. Scratch cells to reveal what's underneath — some are instant prizes, some give clues, one hides the pickle.
+
+**⚠️ Fingerprint conflict flagged (Juul review, 2026-04):** Core verb (tap-to-reveal) + info model (hot/cold on clue cells) = 2-axis overlap with Tree Finder / Tree Finder 2. Core verb + resource feel (variable-value gambling) = 2-axis overlap with Press Your Luck. Kept because the lottery fiction and prize economy create a meaningfully different felt experience — but the core verb overlap is real. If playtesting shows it feels like Tree Finder with prizes, revisit the clue cell mechanic.
 
 **Mechanics:**
 - Tree-shaped grid, same shape as Tree Finder
@@ -205,7 +207,7 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 - Spatial reasoning without time pressure — ideal for all ages
 - Satisfying "click" moment when the path clears and the pickle slides out
 
-**Enhancement to consider:** Add continuous positional feedback as ornaments slide — a faint glow or warmth gradient that intensifies as the gap approaches the pickle's position. This turns pure spatial reasoning into a tuning-dial mechanic: you're calibrating position, not just clearing a path. Keeps casual players oriented without removing the puzzle structure.
+**Required before building (Juul review, 2026-04):** The warmth-gradient feedback (faint glow intensifying as the gap approaches the pickle's position) is not an enhancement — it is what differentiates this from Branch Pusher. Without it, resource feel and player control curve both overlap with Branch Pusher (2-axis borderline conflict). Design the gradient behavior on paper before coding begins.
 
 **Seed use:** Ornament positions, sizes, and orientations seeded. Pickle start position and exit seeded.
 
@@ -264,25 +266,27 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Source:** Mechanic combination #97 (Fog of War + Scarcity Management). Panel consensus: essential, strongest pick. *"Everything else should be compared against this." — Lazzaro*
 
-### ✅ 15. Pickle Garland (`pickle-garland`) — DONE
-**Concept:** String ornaments into a scoring chain — each one added scores more than the last. But the next ornament is hidden; it might break the chain and score nothing. Stop and bank, or keep stringing?
+### ⚠️ 15. Pickle Garland (`pickle-garland`) — IMPLEMENTATION DISCARDED, REDESIGN PENDING
 
-**Mechanics:**
-- Tree-shaped grid of hidden ornaments
-- Player taps to add the next ornament to the garland; its type is revealed on tap
-- Matching type extends the chain and multiplies score; wrong type breaks it (score nothing for that chain)
-- Player can stop and bank the chain score at any time before tapping
-- Pickle is hidden among the ornaments — finding it while stringing a chain triggers win + chain score bonus
-- Score = total chain points banked
+**Original concept (discarded):** String ornaments into a scoring chain — tap to reveal next ornament, bank or continue. Marked done in index.html but diagnosed as zero-agency: click → ornament appears → click → ornament appears. No information to base bank/continue decision on. Root cause: "Hidden Information + Chain Scoring" requires visible probability space (like Blackjack) to function. Without it, the Bank button is cosmetic. Implementation exists in index.html but should be replaced.
 
-**Why it's interesting:**
-- "Keep going or stop" is universally understood — Jenga, Blackjack, any childhood game
-- Two win flavors: brave (extended and hit jackpot) or smart (banked at exactly the right moment)
-- Even losing a chain is fun — you overreached
+**Replacement concept (panel-reviewed, pre-build decisions pending):**
+- Match-3 board on the left, bare Christmas tree on the right
+- Board contains ornaments (by color) and popcorn pieces
+- Create a string of same-color ornaments → garland added to tree
+- Popcorn match → pieces "POP", clearing adjacent squares before leaving the board
+- 7 garland slots on the tree to fill → win → pickle revealed as reward
+
+**Panel feedback (received):** Concept validated. Garland metaphor is strong. Popcorn POP is the most interesting mechanic. Main risk: dual-zone layout complexity.
+
+**Pre-build decisions required before coding:**
+1. **POP mechanic purpose** — power-up (clears bad pieces, helps player) or hazard (disrupts board state)? Panel leaned power-up but deferred to playtest.
+2. **Dual-zone first-touch** — how does first tap work when UI has both a match-3 board and a tree? Need to define touch target separation to avoid accidental taps.
+3. **Pickle reveal ceremony** — the win must feel like an event (Lazzaro's central note). Design the reveal animation before coding so it's not an afterthought. Slot machine reveal (from Tree Dungeon prototype) is the reference standard.
 
 **Source:** Mechanic combination #195 (Hidden Information + Chain Scoring). Panel consensus: essential. *"Cleanest emotional signature of any mechanic on the list." — Lazzaro*
 
-### ⬜ 16. Vault Trigger (`vault-trigger`)
+### ❌ 16. Vault Trigger (`vault-trigger`) — KILLED
 **Concept:** Deduce where the pickle is hiding, then commit — step on the pressure plate that reveals a branch. The plate starts a process you can't undo. Are you sure enough?
 
 **Mechanics:**
@@ -300,7 +304,7 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Source:** Mechanic combination #117 (Deduction + Pressure Plate). Panel consensus: essential.
 
-### ⬜ 17. Press Your Branch (`press-branch`) — build after Vault Trigger (#16) to verify distinct feel in practice
+### ⬜ 17. Press Your Branch (`press-branch`) — build after Lottery Scratcher (#10)
 **Concept:** Each correct guess about the pickle's location adds a new constraint to the game. The puzzle tightens as you succeed. Push your luck — one more guess — or bank what you've narrowed down?
 
 **Mechanics:**
@@ -352,17 +356,16 @@ Same hot/cold grid as Tree Finder with hint presents under the tree.
 
 **Seed use:** Pickle positions seeded. Same grid for everyone that day.
 
-### ⬜ 20. House Exploration (`house-explore`)
+### ❌ 20. House Exploration (`house-explore`) — KILLED
 Top-down RPG (Link's Awakening style). Walk through rooms of the house on Christmas Eve, talk to NPCs for clues, find the pickle hidden somewhere in the tree room.
-- Grid-based movement, multiple rooms
-- NPCs give directional or hot/cold clues
-- Score = steps taken
 
-### ⬜ 21. Metroidvania Tree (`metroidvania`)
+### ⬜ 21. Metroidvania Tree (`metroidvania`) — no build slot until backtracking is solved
 Side-scrolling tree with locked branches. Find key ornaments to unlock new sections and eventually reach the pickle.
 - Left/right/up/down movement across branches
 - Certain paths blocked until player finds matching key ornament
 - Score = moves to reach pickle
+
+**Note (Juul review, 2026-04):** Backtracking requires game literacy to feel intentional rather than broken — non-gamer players experience being sent backward as a mistake. Core verb also overlaps with Tree Dungeon on one axis. The key-ornament unlock mechanic could work as a component inside another prototype, but should not anchor its own build slot until a non-gamer-legible version of backtracking is designed.
 
 ---
 
@@ -417,34 +420,54 @@ Decide what to add to the prototype queue.
 | **Sliding Tile** — scrambled tree image, slide tiles to solve | Weak core loop; frustrating journey, satisfaction only at the end |
 | **Fog-of-War Map** — reveal zones, get directional arrows | Weak core loop; tapping for info isn't a loop, overlaps with Tree Finder |
 | **Branch or Deduce** (#18) — free deduction or pay to branch for a clue cluster | Same experience as Tree Finder 2: free cheap info vs. paid better info loop. No genuinely new verb. |
+| **Vault Trigger** (#16) — gather clues, then make one irreversible commit tap; "pressure plate" triggers a reveal you can't undo | "Commitment as drama" sounds exciting but never resolves into a fun mechanic. Every implementation either collapses into Tree Finder (two-of-three fingerprint axes match: tap-to-reveal + hot/cold info) or produces bad stress rather than good tension (one-shot commit with no recovery). The "pressure plate" was a tone metaphor, not an actual mechanic. The fun was never there — don't revisit. |
+| **House Exploration** (#20) — top-down RPG; walk rooms of a house; NPCs give clues; find pickle in tree room | Three-axis fingerprint overlap with Tree Dungeon and Tree Dungeon 2 (walk-to-cell + exploration budget + navigate-blind control curve). The fiction changes but the mechanic does not. Higher cognitive load than Tree Dungeon (multi-room spatial map, NPC backtracking), structurally awkward two-act ending where the tree-room mechanic must be invented from scratch. It's a reskin with extra complexity — don't revisit. |
 
 ---
 
 ## Conflict Check
 
-Before building any new prototype, run this 3-axis fingerprint check against all existing prototypes. **If 2 of 3 axes match, it's a conflict — stop and redesign.**
+### Pre-naming check — run before any concept gets a name or description
+
+Before a new concept is named or written up, complete these two sentences in plain language — no thematic framing, no metaphor:
+1. "The player's one action per turn is: ___"
+2. "The player knows where to look next because: ___"
+
+If either sentence requires the concept's theme to make sense, the mechanic is not yet defined clearly enough to name. Run the full four-axis check once both can be answered plainly.
+
+---
+
+Before adding any concept to the queue (⬜ entry), run this 4-axis fingerprint check against all existing prototypes. **If 2 of 4 axes match, it's a conflict — stop and redesign before queuing.**
 
 | Axis | Question |
 |---|---|
 | **Core verb** | What does the player *do* on each turn? (tap-to-reveal, drag-to-move, chain-extend, commit-once…) |
 | **Info model** | How does the player learn where the pickle is? (hot/cold hints, fog-of-war, visible costs, deduction, no info…) |
 | **Resource feel** | What is the emotional texture of the resource? (gambling, scarcity countdown, physical displacement, chain extension…) |
+| **Player control curve** | Does the player feel progressively more in control, or is control periodically surrendered to the game? Write from the player's felt experience, not the mechanic's structure. |
 
 **Existing fingerprints:**
 
-| Prototype | Core verb | Info model | Resource feel |
-|---|---|---|---|
-| Tree Finder | tap-to-reveal | hot/cold distance | free search, flag elimination |
-| Tree Dungeon | walk-to-cell | fog-of-war proximity (✨) | exploration budget |
-| String of Lights | tap-to-rotate | path connectivity | rotation quota |
-| Branch Pusher | drag-to-push | physical exposure | push budget (Sokoban) |
-| Pickle Chase | tap-to-check | fading trail (recency) | turns vs. moving target |
-| Press Your Luck | tap-to-reveal | visible upfront cost | gambling (risk tiers + tokens) |
-| Excavate | tap-to-dig (layered) | escalating quality per depth | depth-vs-breadth budget |
-| Nonogram | fill/cross cell | row/column run constraints | error count |
-| Tree Dungeon 2 | walk-to-cell | fog-of-war + hot/cold hybrid | exploration budget |
-| Tree Finder 2 | tap-to-reveal + buy-hint | hot/cold + directional present hints | moves + present economy |
-| Shake the Tree | swipe-to-displace | physical exposure (ornament layers) | swipe budget |
+| Prototype | Core verb | Info model | Resource feel | Player control curve |
+|---|---|---|---|---|
+| Tree Finder | tap-to-reveal | hot/cold distance | free search, flag elimination | Tapping into the dark; each hint brings quiet relief and a smaller, safer space |
+| Tree Dungeon | walk-to-cell | fog-of-war proximity (✨) | exploration budget | Navigate blind, stumble onto surprises, slot machine payoff |
+| String of Lights | tap-to-rotate | path connectivity | rotation quota | Untangle a knot — satisfying when the path snaps into place |
+| Branch Pusher | drag-to-push | physical exposure | push budget (Sokoban) | Clear a path by moving things aside; spatial planning |
+| Pickle Chase | tap-to-check | fading trail (recency) | turns vs. moving target | Chase something that keeps moving; urgency building to a corner |
+| Press Your Luck | tap-to-reveal | visible upfront cost | gambling (risk tiers + tokens) | Weigh each gamble; spend big or play it safe |
+| Excavate | tap-to-dig (layered) | escalating quality per depth | depth-vs-breadth budget | Patient excavation; go wide or commit deep |
+| Nonogram | fill/cross cell | row/column run constraints | error count | Confusion that slowly resolves row by row; surprise when a recognizable image emerges |
+| Tree Dungeon 2 | walk-to-cell | fog-of-war + hot/cold hybrid | exploration budget | Navigate blind with occasional orientation; slot machine payoff |
+| Tree Finder 2 | tap-to-reveal + buy-hint | hot/cold + directional present hints | moves + present economy | Systematically narrow, splurge on hints when stuck |
+| Shake the Tree | swipe-to-displace | physical exposure (ornament layers) | swipe budget | Rummage through a pile; tactile search |
+| Lottery Scratcher ⚠️ | tap-to-reveal | hot/cold (clue cells) + prize economy | variable-value gambling | Lottery rhythm — each scratch oscillates between small rewards and dead ends |
+| Ornament Parking Jam ⚠️ | drag-to-slide | fully visible board | move budget (spatial puzzle) | Spatial untangling; steady path-clearing toward a satisfying final slide |
+| Pickle Garland (replacement) | tap-to-match/clear | fully visible board | fill-meter accumulation | Steady positive momentum; small victories as garlands accumulate |
+| Press Your Branch | directional-zone-guess | constraint propagation / zone elimination | Blackjack pressing luck | Player-authored space collapse; own deductions cause solution to emerge |
+| Pickle-sweeper | tap-to-reveal | adjacency number deduction | deduction budget | Systematic adjacency deduction (requires Minesweeper literacy to feel coherent) |
+| Metroidvania Tree | walk-to-cell + item-collect | locked gates + unknown pickle location | key-collection enablement | Periodic control surrender at gates; restoration at unlocks (backtracking feels like a mistake to non-gamers) |
+| Evidence Burn | reveal-or-burn binary | pure elimination probability | catastrophic vs. safe accumulation | Never fully in control; catastrophic surrender possible at any moment |
 
 ---
 
@@ -462,6 +485,10 @@ Before building any new prototype, run this 3-axis fingerprint check against all
 11. ✅ Tree Finder 2
 12. ✅ Shake the Tree
 13. ✅ Pickle Garland
+14. ✅ Lottery Scratcher (#10) — DONE (v0.22)
+15. ⬜ Press Your Branch (#17)
+16. ⬜ Pickle Garland redesign (#15) — pre-build decisions required first
+17. ⬜ Ornament Parking Jam (#11) — warmth gradient design required first
 
 ---
 

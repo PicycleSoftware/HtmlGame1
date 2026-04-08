@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.21</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.22</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -359,12 +359,13 @@ function loadScore(protoId) {
   } catch { return null; }
 }
 
-function saveScore(protoId, moves) {
+function saveScore(protoId, moves, higherBetter) {
   try {
     const key = `pickle-${getTodayString()}-${protoId}`;
     const existing = loadScore(protoId);
-    // Only save if it's a new best (or first time)
-    if (!existing || moves < existing.moves) {
+    const isBetter = !existing ||
+      (higherBetter ? moves > existing.moves : moves < existing.moves);
+    if (isBetter) {
       localStorage.setItem(key, JSON.stringify({ moves, date: getTodayString() }));
     }
   } catch {}
@@ -494,6 +495,16 @@ const PROTOTYPES = [
     available: true,
     create: (canvas, seed) => new PickleGarlandGame(canvas, seed),
   },
+  {
+    id: 'scratcher',
+    name: 'Lottery Scratcher',
+    icon: '🎰',
+    desc: 'Earn scratches by playing three outer boxes, then scratch the tree to find the hidden pickle. More left over = better score.',
+    available: true,
+    allowPlayAgain: true,
+    higherScoreIsBetter: true,
+    create: (canvas, seed) => new LotteryScatcherGame(canvas, seed),
+  },
 ];
 
 // ============================================================
@@ -589,7 +600,7 @@ function startGame(proto, seedOverride) {
     document.getElementById('game-score').textContent = `Moves: ${moves}`;
   };
   currentGame.onWin = (moves) => {
-    if (seedOverride === undefined) saveScore(proto.id, moves);
+    if (seedOverride === undefined) saveScore(proto.id, moves, proto.higherScoreIsBetter);
     showWin(proto, moves);
   };
   currentGame.onControlsChange = renderControls;
@@ -703,10 +714,15 @@ function showWin(proto, moves) {
   _winProto = proto;
   _winMoves = moves;
   const total = currentGame ? currentGame.totalCells : 40;
-  const rating = scoreRating(moves, total);
+  const rating = (currentGame && currentGame.getScoreRating)
+    ? currentGame.getScoreRating(moves)
+    : scoreRating(moves, total);
+  const scoreText = (currentGame && currentGame.winScoreText)
+    ? currentGame.winScoreText(moves)
+    : `${moves} move${moves !== 1 ? 's' : ''}`;
 
   document.getElementById('win-sub-text').textContent = `The Christmas pickle was found!`;
-  document.getElementById('win-score-text').textContent = `${moves} move${moves !== 1 ? 's' : ''}`;
+  document.getElementById('win-score-text').textContent = scoreText;
   document.getElementById('win-stars').textContent = rating.stars;
   document.getElementById('win-label').textContent = rating.label;
   document.getElementById('btn-play-again').style.display = proto.allowPlayAgain ? '' : 'none';
@@ -5296,6 +5312,806 @@ class PickleGarlandGame {
       btn.textContent = `🏦 Bank (${this.chainScore})`;
       btn.addEventListener('click', () => this.bank());
       bar.appendChild(btn);
+    }
+  }
+}
+
+// ============================================================
+// PROTOTYPE: LOTTERY SCRATCHER
+// ============================================================
+// Earn scratch budget by playing three outer boxes, then scratch
+// the Christmas tree to find the hidden pickle.
+// Score = scratches remaining when pickle is found.
+// ============================================================
+
+class LotteryScatcherGame {
+  constructor(canvas, seed) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.seed = seed ^ 0xDAD1CAFE;
+    this.onScoreUpdate = null;
+    this.onWin = null;
+    this.onControlsChange = null;
+
+    this.won = false;
+    this.freePlay = false;
+    this.animating = false;
+
+    const rng = makePRNG(this.seed);
+
+    // ---- Box 1: pick 5 of 9, all winners ----
+    // Distribution: 3×(+1), 5×(+2), 1×(+3) → min 7, max 11, avg ~9
+    this.box1Values = this._shuffle([1,1,1,2,2,2,2,2,3], rng);
+    this.box1Revealed = new Array(9).fill(false);
+    this.box1PicksLeft = 5;
+    this.box1Total = 0;
+    this._box1Rects = null;
+
+    // ---- Box 2: scratch til you strike gold ----
+    // 12 cells: prize types at positions 1–11 (never position 0)
+    const prizePos = this._shuffle([1,2,3,4,5,6,7,8,9,10,11], rng).slice(0, 4);
+    const prizes   = this._shuffle(['+3','+4','1.5x','2x'], rng);
+    this.box2Cells = new Array(12).fill('coal');
+    for (let i = 0; i < 4; i++) this.box2Cells[prizePos[i]] = prizes[i];
+    this.box2Revealed = new Array(12).fill(false);
+    this.box2Done  = false;
+    this.box2Prize = null;
+    this._box2Rects = null;
+
+    // ---- Box 3: optional modifier ----
+    // One modifier hidden among 7 coal cells (never at position 0)
+    const modOpts    = ['0.5x','1.5x','2x','3x'];
+    const modWeights = [0.30, 0.30, 0.25, 0.15];
+    let roll = rng(), cum = 0, modIdx = modOpts.length - 1;
+    for (let i = 0; i < modWeights.length; i++) {
+      cum += modWeights[i];
+      if (roll < cum) { modIdx = i; break; }
+    }
+    this.box3Modifier = modOpts[modIdx];
+    const box3ModPos  = Math.floor(rng() * 7) + 1; // positions 1–7
+    this.box3Cells    = new Array(8).fill('coal');
+    this.box3Cells[box3ModPos] = this.box3Modifier;
+    this.box3Revealed = new Array(8).fill(false);
+    this.box3Done    = false;
+    this.box3Skipped = false;
+    this.box3Applied = null;
+    this._box3Rects  = null;
+    this._box3SkipRect = null;
+    this._box3PlayRect = null;
+
+    // ---- Scratch budget ----
+    this.scratchBudget = 0;
+    this.totalBudget   = 0; // locked at phase-4 entry
+
+    // ---- Tree (rows 0–6, 37 cells) ----
+    this.COLS = 9;
+    this.ranges = [[4,4],[3,5],[2,6],[1,7],[2,6],[1,7],[0,8]];
+    this._buildTree();
+    this.pickable = [...this.treeCells].filter(k => +k.split(',')[0] > 0);
+    this.totalCells  = this.pickable.length; // 36 for scoring hooks
+    this.pickleKey   = null;  // placed on phase-4 entry
+    this.centralRevealed = new Set(['0,4']); // star always visible
+    this._pickleRng  = makePRNG(this.seed ^ 0xFEEDF00D);
+
+    // ---- Cell colours (stable across renders) ----
+    const COLS_LIST = ['#e03030','#e8b010','#3090e0','#c040a0','#30b060','#e06020'];
+    const cRng = makePRNG(this.seed ^ 0xC010C010);
+    this._cellColor = {};
+    for (const k of this.treeCells) {
+      this._cellColor[k] = COLS_LIST[Math.floor(cRng() * COLS_LIST.length)];
+    }
+
+    // ---- Phases ----
+    // 0=box1  1=box2  2=box3-prompt  3=box3-scratch  4=central
+    this.phase = 0;
+
+    // ---- Animations ----
+    this.slotAnim    = null;
+    this.counterAnim = null; // { from, to, label, size, startMs, durMs }
+
+    // ---- Layout (set by resize) ----
+    this.W = 0; this.H = 0; this.counterH = 70;
+    this.cs = 0; this.ox = 0; this.oy = 0;
+  }
+
+  // ---- helpers ----
+
+  _buildTree() {
+    this.treeCells = new Set();
+    for (let r = 0; r < this.ranges.length; r++) {
+      const [lo, hi] = this.ranges[r];
+      for (let c = lo; c <= hi; c++) this.treeCells.add(`${r},${c}`);
+    }
+  }
+
+  _shuffle(arr, rng) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  _placePickle() {
+    const rng  = this._pickleRng;
+    const pool = [...this.pickable];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    // Adaptive: tight budget → top half of tree
+    if (this.totalBudget <= 10) {
+      const easy = pool.filter(k => +k.split(',')[0] <= 3);
+      if (easy.length) { this.pickleKey = easy[0]; return; }
+    }
+    this.pickleKey = pool[0];
+  }
+
+  // ---- win-overlay hooks ----
+
+  winScoreText(remaining) {
+    return remaining > 0
+      ? `Found it with ${remaining} scratch${remaining !== 1 ? 'es' : ''} to spare!`
+      : 'Found it on the very last scratch!';
+  }
+
+  getScoreRating(remaining) {
+    const b = this.totalBudget || 1;
+    const f = remaining / b;
+    if (f >= 0.55) return { stars: '⭐⭐⭐', label: 'Incredible! You had scratches to burn!' };
+    if (f >= 0.30) return { stars: '⭐⭐',   label: 'Great find — plenty left over!' };
+    if (f >= 0.08) return { stars: '⭐',     label: 'Close call — pickle found just in time!' };
+    return { stars: '🎰', label: 'Last-scratch miracle!' };
+  }
+
+  // ---- counter animation (Peggle style) ----
+
+  _applyBudget(raw) {
+    // raw: '+3' | '+4' | '1.5x' | '2x' | '3x' | '0.5x'
+    let newVal;
+    if (raw.startsWith('+')) {
+      newVal = this.scratchBudget + parseInt(raw.slice(1), 10);
+    } else {
+      newVal = Math.max(1, Math.round(this.scratchBudget * parseFloat(raw)));
+    }
+    const delta = newVal - this.scratchBudget;
+    const size  = (raw.includes('x') && parseFloat(raw) >= 1.5) ? 'large'
+                : (raw.startsWith('+') && parseInt(raw.slice(1), 10) >= 4) ? 'medium'
+                : 'small';
+    this.counterAnim = {
+      from: this.scratchBudget, to: newVal, label: raw,
+      size, startMs: Date.now(),
+      durMs: size === 'large' ? 900 : size === 'medium' ? 600 : 380,
+    };
+    this.scratchBudget = newVal;
+    const tick = () => {
+      if (!this.counterAnim) return;
+      this.render();
+      const age = Date.now() - this.counterAnim.startMs;
+      if (age < this.counterAnim.durMs + 500) {
+        requestAnimationFrame(tick);
+      } else {
+        this.counterAnim = null;
+        this.render();
+      }
+    };
+    requestAnimationFrame(tick);
+    return newVal;
+  }
+
+  // ---- resize / layout ----
+
+  resize(w, h) {
+    this.W = w; this.H = h;
+    this.canvas.width  = w;
+    this.canvas.height = h;
+    this.counterH = Math.min(80, Math.floor(h * 0.13));
+    const usableH = h - this.counterH;
+    const ROWS = this.ranges.length; // 7
+    const cellW = (w - 24) / this.COLS;
+    const cellH = (usableH - 16) / ROWS;
+    this.cs = Math.floor(Math.min(cellW, cellH, 58));
+    this.ox = Math.floor((w - this.cs * this.COLS) / 2);
+    this.oy = this.counterH + Math.floor((usableH - this.cs * ROWS) / 2);
+    this.render();
+  }
+
+  // ---- render dispatch ----
+
+  render() {
+    const { ctx, W, H } = this;
+    if (!W || !H) return;
+    ctx.fillStyle = '#1a3a0a';
+    ctx.fillRect(0, 0, W, H);
+    if (this.phase <= 3) {
+      this._drawCounter();
+      this._drawPhaseDots();
+      const boxTop = this.counterH + 32;
+      const boxH   = H - boxTop;
+      if (this.phase === 0) this._renderBox1(boxTop, boxH);
+      else if (this.phase === 1) this._renderBox2(boxTop, boxH);
+      else if (this.phase === 2) this._renderBox3Prompt(boxTop, boxH);
+      else                       this._renderBox3Scratch(boxTop, boxH);
+    } else {
+      this._renderCentral();
+      if (this.slotAnim) this._drawSlot();
+    }
+  }
+
+  // ---- counter strip ----
+
+  _drawCounter() {
+    const { ctx, W, counterH } = this;
+    const anim    = this.counterAnim;
+    const elapsed = anim ? Date.now() - anim.startMs : 0;
+    const frac    = anim ? Math.min(1, elapsed / anim.durMs) : 1;
+
+    ctx.fillStyle = '#243d14';
+    ctx.fillRect(0, 0, W, counterH);
+    ctx.fillStyle = '#3a5e20';
+    ctx.fillRect(0, counterH - 2, W, 2);
+
+    ctx.font = '10px sans-serif';
+    ctx.fillStyle = '#90b870';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('SCRATCHES EARNED', W / 2, 5);
+
+    // Pulse scale
+    let scale = 1;
+    if (anim) {
+      const amp   = anim.size === 'large' ? 0.52 : anim.size === 'medium' ? 0.30 : 0.13;
+      const decay = Math.exp(-elapsed / (anim.durMs * 0.4));
+      scale = 1 + amp * Math.sin(Math.PI * frac * 2.2) * decay;
+    }
+
+    const numColor = anim
+      ? (anim.size === 'large' ? '#ff9900' : anim.size === 'medium' ? '#ffd700' : '#f0e8d0')
+      : '#f0e8d0';
+
+    ctx.save();
+    ctx.translate(W / 2, counterH * 0.58);
+    ctx.scale(scale, scale);
+    ctx.font = `bold ${Math.floor(counterH * 0.50)}px sans-serif`;
+    ctx.fillStyle = numColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(this.scratchBudget), 0, 0);
+    ctx.restore();
+
+    // Floating delta
+    if (anim && frac < 0.80) {
+      const alpha  = 1 - frac / 0.80;
+      const floatY = counterH * 0.22 - frac * 26;
+      const fsz    = anim.size === 'large' ? 20 : 14;
+      ctx.font = `bold ${fsz}px sans-serif`;
+      ctx.fillStyle = `rgba(255,215,0,${alpha})`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(anim.label, W * 0.72, floatY);
+    }
+  }
+
+  _drawPhaseDots() {
+    const { ctx, W, counterH } = this;
+    const dotY = counterH + 14;
+    const dotR = 4, gap = 20;
+    const startX = W / 2 - gap;
+    for (let i = 0; i < 3; i++) {
+      const cx = startX + i * gap;
+      ctx.beginPath();
+      ctx.arc(cx, dotY, dotR, 0, Math.PI * 2);
+      const done   = (i === 0 && this.phase > 0) ||
+                     (i === 1 && (this.box2Done)) ||
+                     (i === 2 && (this.box3Done || this.box3Skipped));
+      const active = (i === this.phase) || (i === 1 && this.phase === 1) ||
+                     (i === 2 && (this.phase === 2 || this.phase === 3));
+      ctx.fillStyle = done ? '#6aab3e' : (active ? '#ffd700' : '#3a5e20');
+      ctx.fill();
+    }
+  }
+
+  // ---- scratch-cell drawing helper ----
+
+  _drawCell(rx, ry, rw, rh, revealed, content, type) {
+    // type: 'value' | 'coal' | 'prize' | 'modifier'
+    const { ctx } = this;
+    roundRect(ctx, rx, ry, rw, rh, 7);
+    if (!revealed) {
+      ctx.fillStyle = '#2e5018'; ctx.fill();
+      ctx.strokeStyle = '#6aab3e'; ctx.lineWidth = 2; ctx.stroke();
+      // scratch-texture overlay
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.strokeStyle = '#a8d08d'; ctx.lineWidth = 1;
+      for (let dy = 5; dy < rh; dy += 5) {
+        ctx.beginPath();
+        ctx.moveTo(rx + 3, ry + dy);
+        ctx.lineTo(rx + rw - 3, ry + dy);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+    // Revealed backgrounds
+    if (content === 'coal') {
+      ctx.fillStyle = '#1a2810';
+    } else if (type === 'value') {
+      ctx.fillStyle = content === 3 ? '#4a1800' : content === 2 ? '#0e2e0e' : '#0e1e2e';
+    } else {
+      ctx.fillStyle = content === '0.5x' ? '#3a0a0a' : '#2a1a00';
+    }
+    ctx.fill();
+    ctx.strokeStyle = '#3a5e20'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    // Content text
+    const cx = rx + rw / 2, cy = ry + rh / 2;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+    if (content === 'coal') {
+      ctx.font = `${Math.floor(rh * 0.44)}px serif`;
+      ctx.fillText('🪨', cx, cy);
+    } else if (type === 'value') {
+      ctx.font = `bold ${Math.floor(rh * 0.36)}px sans-serif`;
+      ctx.fillStyle = content === 3 ? '#ff9900' : content === 2 ? '#7aff7a' : '#a8d08d';
+      ctx.fillText(`+${content}`, cx, cy);
+    } else {
+      const good = content !== '0.5x';
+      ctx.font = `bold ${Math.floor(rh * 0.30)}px sans-serif`;
+      ctx.fillStyle = good ? '#ffd700' : '#ff6666';
+      ctx.fillText(content, cx, cy);
+      ctx.font = `${Math.floor(rh * 0.20)}px serif`;
+      ctx.fillText(good ? '⭐' : '💀', cx, cy + rh * 0.30);
+    }
+  }
+
+  _gridLayout(cols, count, maxGridW, cellMax, boxTop, boxH, labelH) {
+    const pad  = 6;
+    const cellW = Math.floor((maxGridW - pad * (cols - 1)) / cols);
+    const rows  = Math.ceil(count / cols);
+    const cellH = Math.min(cellMax, Math.floor((boxH - labelH) / rows));
+    const gridW = cols * cellW + pad * (cols - 1);
+    const gridH = rows * cellH + pad * (rows - 1);
+    const gridX = Math.floor((this.W - gridW) / 2);
+    const gridY = boxTop + labelH;
+    const rects = [];
+    for (let i = 0; i < count; i++) {
+      const r = Math.floor(i / cols), c = i % cols;
+      rects.push({
+        x: gridX + c * (cellW + pad),
+        y: gridY + r * (cellH + pad),
+        w: cellW, h: cellH,
+      });
+    }
+    return rects;
+  }
+
+  // ---- Box 1 ----
+
+  _renderBox1(boxTop, boxH) {
+    const { ctx, W } = this;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#ffd700';
+    ctx.fillText('Box 1', W / 2, boxTop + 2);
+    ctx.font = '11px sans-serif'; ctx.fillStyle = '#a8d08d';
+    ctx.fillText('Pick 5 — every space a winner!', W / 2, boxTop + 20);
+    ctx.font = '10px sans-serif'; ctx.fillStyle = '#7aaa5a';
+    ctx.fillText(`${this.box1PicksLeft} pick${this.box1PicksLeft !== 1 ? 's' : ''} remaining`, W / 2, boxTop + 36);
+
+    const rects = this._gridLayout(3, 9, Math.min(W - 28, 258), 80, boxTop, boxH, 54);
+    this._box1Rects = rects;
+    for (let i = 0; i < 9; i++) {
+      const rc = rects[i];
+      this._drawCell(rc.x, rc.y, rc.w, rc.h, this.box1Revealed[i], this.box1Values[i], 'value');
+    }
+    if (this.box1Total > 0) {
+      const lastRc = rects[8];
+      ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#ffd700';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(`Running total: +${this.box1Total}`, W / 2, lastRc.y + lastRc.h + 8);
+    }
+  }
+
+  // ---- Box 2 ----
+
+  _renderBox2(boxTop, boxH) {
+    const { ctx, W } = this;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#ffd700';
+    ctx.fillText('Box 2', W / 2, boxTop + 2);
+    ctx.font = '11px sans-serif'; ctx.fillStyle = '#a8d08d';
+    ctx.fillText("Scratch 'til you strike gold!", W / 2, boxTop + 20);
+    ctx.font = '10px sans-serif'; ctx.fillStyle = '#7aaa5a';
+    ctx.fillText('First prize you find — you keep it!', W / 2, boxTop + 36);
+
+    const rects = this._gridLayout(4, 12, Math.min(W - 24, 300), 72, boxTop, boxH, 54);
+    this._box2Rects = rects;
+    for (let i = 0; i < 12; i++) {
+      const rc = rects[i];
+      const isCoal = this.box2Cells[i] === 'coal';
+      this._drawCell(rc.x, rc.y, rc.w, rc.h, this.box2Revealed[i],
+        this.box2Cells[i], isCoal ? 'coal' : 'prize');
+    }
+  }
+
+  // ---- Box 3 prompt ----
+
+  _renderBox3Prompt(boxTop, boxH) {
+    const { ctx, W } = this;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#ffd700';
+    ctx.fillText('Box 3 — Optional', W / 2, boxTop + 2);
+    ctx.font = '13px sans-serif'; ctx.fillStyle = '#a8d08d';
+    ctx.fillText('Feeling Lucky? 🎰', W / 2, boxTop + 22);
+
+    const lines = [
+      'Scratch to reveal a mystery modifier.',
+      "Could multiply your scratches… or cut them.",
+      `You've earned ${this.scratchBudget} scratches so far.`,
+    ];
+    ctx.font = '11px sans-serif'; ctx.fillStyle = '#90b870';
+    lines.forEach((l, i) => ctx.fillText(l, W / 2, boxTop + 48 + i * 17));
+
+    const btnW = Math.min(138, (W - 44) / 2);
+    const btnH = 50;
+    const btnY = boxTop + boxH * 0.50;
+    const skipX = W / 2 - btnW - 8;
+    const playX = W / 2 + 8;
+
+    roundRect(ctx, skipX, btnY, btnW, btnH, 10);
+    ctx.fillStyle = '#243d14'; ctx.fill();
+    ctx.strokeStyle = '#3a5e20'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#90b870';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Skip it', skipX + btnW / 2, btnY + btnH / 2);
+
+    roundRect(ctx, playX, btnY, btnW, btnH, 10);
+    ctx.fillStyle = '#6aab3e'; ctx.fill();
+    ctx.strokeStyle = '#8ad060'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.font = 'bold 12px sans-serif'; ctx.fillStyle = '#0f2006';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Try my luck! 🎰', playX + btnW / 2, btnY + btnH / 2);
+
+    this._box3SkipRect = { x: skipX, y: btnY, w: btnW, h: btnH };
+    this._box3PlayRect = { x: playX, y: btnY, w: btnW, h: btnH };
+  }
+
+  // ---- Box 3 scratch ----
+
+  _renderBox3Scratch(boxTop, boxH) {
+    const { ctx, W } = this;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#ffd700';
+    ctx.fillText('Box 3 — Feeling Lucky?', W / 2, boxTop + 2);
+    ctx.font = '10px sans-serif'; ctx.fillStyle = '#7aaa5a';
+    ctx.fillText('Scratch until you find your modifier!', W / 2, boxTop + 22);
+
+    const rects = this._gridLayout(4, 8, Math.min(W - 24, 300), 72, boxTop, boxH, 40);
+    this._box3Rects = rects;
+    for (let i = 0; i < 8; i++) {
+      const rc = rects[i];
+      const isCoal = this.box3Cells[i] === 'coal';
+      this._drawCell(rc.x, rc.y, rc.w, rc.h, this.box3Revealed[i],
+        this.box3Cells[i], isCoal ? 'coal' : 'modifier');
+    }
+  }
+
+  // ---- Central box (tree) ----
+
+  _renderCentral() {
+    const { ctx, W, H, cs, ox, oy } = this;
+    const counterH = this.counterH;
+
+    // Budget counter
+    ctx.fillStyle = '#243d14';
+    ctx.fillRect(0, 0, W, counterH);
+    ctx.fillStyle = '#3a5e20';
+    ctx.fillRect(0, counterH - 2, W, 2);
+    ctx.font = '10px sans-serif'; ctx.fillStyle = '#90b870';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillText(this.freePlay ? 'FREE PLAY' : 'SCRATCHES LEFT', W / 2, 5);
+    const budgetColor = this.freePlay ? '#90b870'
+      : (this.scratchBudget <= 3 ? '#ff6666' : '#ffd700');
+    ctx.font = `bold ${Math.floor(counterH * 0.50)}px sans-serif`;
+    ctx.fillStyle = budgetColor;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(this.freePlay ? '∞' : String(this.scratchBudget), W / 2, counterH * 0.58);
+
+    // Tree cells
+    for (const key of this.treeCells) {
+      const [r, c] = key.split(',').map(Number);
+      const x = ox + c * cs, y = oy + r * cs;
+      const revealed  = this.centralRevealed.has(key);
+      const isStar    = key === '0,4';
+      const isPickle  = key === this.pickleKey;
+
+      roundRect(ctx, x + 2, y + 2, cs - 4, cs - 4, 6);
+
+      if (isStar) {
+        ctx.fillStyle = '#3a5e20'; ctx.fill();
+        ctx.font = `${Math.floor(cs * 0.54)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('⭐', x + cs / 2, y + cs / 2);
+      } else if (!revealed) {
+        ctx.fillStyle = '#2e5018'; ctx.fill();
+        ctx.strokeStyle = '#6aab3e'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.save();
+        ctx.globalAlpha = 0.10;
+        ctx.strokeStyle = '#a8d08d'; ctx.lineWidth = 1;
+        for (let dy = 5; dy < cs - 2; dy += 5) {
+          ctx.beginPath(); ctx.moveTo(x + 4, y + dy); ctx.lineTo(x + cs - 4, y + dy); ctx.stroke();
+        }
+        ctx.restore();
+      } else if (isPickle && this.won) {
+        ctx.fillStyle = '#1e3010'; ctx.fill();
+        ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 2; ctx.stroke();
+        ctx.font = `${Math.floor(cs * 0.54)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('🥒', x + cs / 2, y + cs / 2);
+      } else {
+        // Revealed ornament
+        ctx.fillStyle = this._cellColor[key]; ctx.fill();
+        roundRect(ctx, x + 2, y + 2, cs - 4, cs - 4, 6);
+        ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fill();
+      }
+    }
+
+    // Freeplay banner
+    if (this.freePlay && !this.won) {
+      ctx.fillStyle = 'rgba(8,24,4,0.88)';
+      ctx.fillRect(0, counterH, W, 34);
+      ctx.font = 'bold 11px sans-serif'; ctx.fillStyle = '#ffd700';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('See you tomorrow! Keep scratching to find the pickle 🔍', W / 2, counterH + 17);
+    }
+  }
+
+  // ---- Slot machine (pickle reveal) ----
+
+  _startSlot(onDone) {
+    this.slotAnim = { startMs: Date.now(), totalMs: 1400, onDone };
+    const tick = () => {
+      if (!this.slotAnim) return;
+      this.render();
+      const age = Date.now() - this.slotAnim.startMs;
+      if (age < this.slotAnim.totalMs + 1400) {
+        requestAnimationFrame(tick);
+      } else {
+        const cb = this.slotAnim.onDone;
+        this.slotAnim = null;
+        this.animating = false;
+        this.render();
+        if (cb) cb();
+      }
+    };
+    requestAnimationFrame(tick);
+  }
+
+  _drawSlot() {
+    const { ctx, W, H, slotAnim: sa } = this;
+    const elapsed = Date.now() - sa.startMs;
+    const growT   = Math.min(1, elapsed / (sa.totalMs * 0.35));
+    const ease    = 1 - Math.pow(1 - growT, 3);
+    const maxW    = Math.min(260, W - 32);
+    const winW    = 56 + (maxW - 56) * ease;
+    const winH    = 38 + (112 - 38) * ease;
+    const winX    = (W - winW) / 2;
+    const winY    = (H - winH) / 2 - 16;
+
+    ctx.fillStyle = `rgba(0,0,0,${0.68 * ease})`;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.save();
+    roundRect(ctx, winX, winY, winW, winH, 12);
+    ctx.fillStyle = '#162e0c'; ctx.fill();
+    ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, winX + 3, winY + 3, winW - 6, winH - 6, 9);
+    ctx.clip();
+
+    const landed = elapsed >= sa.totalMs;
+    if (landed) {
+      const t2     = elapsed - sa.totalMs;
+      const bounce = Math.sin(t2 / 70) * Math.exp(-t2 / 220) * 0.28;
+      const sc     = 1 + Math.max(0, bounce);
+      ctx.save();
+      ctx.translate(winX + winW / 2, winY + winH * 0.44);
+      ctx.scale(sc, sc);
+      ctx.font = `${Math.floor(winH * 0.46)}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🥒', 0, 0);
+      ctx.restore();
+      if (t2 > 350) {
+        ctx.font = `${Math.max(9, Math.floor(winH * 0.15))}px sans-serif`;
+        ctx.fillStyle = '#ffd700aa';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        ctx.fillText('Tap to continue', winX + winW / 2, winY + winH - 4);
+      }
+    } else {
+      const spinFrac = elapsed / sa.totalMs;
+      const cycleMs  = 50 + spinFrac * spinFrac * 360;
+      const syms = ['🎁','⭐','🔔','🎄','❄️','🎊','🍬','🎅','🦌','🪅'];
+      const idx  = Math.floor(elapsed / cycleMs) % syms.length;
+      ctx.font = `${Math.floor(winH * 0.48)}px serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(syms[idx], winX + winW / 2, winY + winH * 0.44);
+    }
+    ctx.restore();
+  }
+
+  // ---- Input ----
+
+  handleTap(px, py) {
+    if (this.animating) return;
+
+    // Dismiss slot after landing
+    if (this.slotAnim) {
+      if (Date.now() - this.slotAnim.startMs >= this.slotAnim.totalMs) {
+        const cb = this.slotAnim.onDone;
+        this.slotAnim = null;
+        this.animating = false;
+        this.render();
+        if (cb) cb();
+      }
+      return;
+    }
+
+    if (this.phase === 0)      this._tapBox1(px, py);
+    else if (this.phase === 1) this._tapBox2(px, py);
+    else if (this.phase === 2) this._tapBox3Prompt(px, py);
+    else if (this.phase === 3) this._tapBox3Scratch(px, py);
+    else                       this._tapCentral(px, py);
+  }
+
+  _tapBox1(px, py) {
+    if (this.box1PicksLeft <= 0) return;
+    for (let i = 0; i < 9; i++) {
+      if (this.box1Revealed[i]) continue;
+      const rc = this._box1Rects && this._box1Rects[i];
+      if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
+      this.box1Revealed[i] = true;
+      const v = this.box1Values[i];
+      this.box1Total += v;
+      this.box1PicksLeft--;
+      this._applyBudget(`+${v}`);
+      if (this.box1PicksLeft === 0) {
+        setTimeout(() => { this.phase = 1; this.render(); }, 520);
+      } else {
+        this.render();
+      }
+      return;
+    }
+  }
+
+  _tapBox2(px, py) {
+    for (let i = 0; i < 12; i++) {
+      if (this.box2Revealed[i]) continue;
+      const rc = this._box2Rects && this._box2Rects[i];
+      if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
+      this.box2Revealed[i] = true;
+      const cell = this.box2Cells[i];
+      if (cell !== 'coal') {
+        this.box2Done  = true;
+        this.box2Prize = cell;
+        this.render();
+        this._applyBudget(cell);
+        setTimeout(() => { this.phase = 2; this.render(); }, 850);
+      } else {
+        this.render();
+      }
+      return;
+    }
+  }
+
+  _tapBox3Prompt(px, py) {
+    const s = this._box3SkipRect, p = this._box3PlayRect;
+    if (s && px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h) {
+      this.box3Skipped = true;
+      this.box3Done    = true;
+      this._enterCentral();
+    } else if (p && px >= p.x && px <= p.x + p.w && py >= p.y && py <= p.y + p.h) {
+      this.phase = 3;
+      this.render();
+    }
+  }
+
+  _tapBox3Scratch(px, py) {
+    for (let i = 0; i < 8; i++) {
+      if (this.box3Revealed[i]) continue;
+      const rc = this._box3Rects && this._box3Rects[i];
+      if (!rc || px < rc.x || px > rc.x + rc.w || py < rc.y || py > rc.y + rc.h) continue;
+      this.box3Revealed[i] = true;
+      const cell = this.box3Cells[i];
+      if (cell !== 'coal') {
+        this.box3Done    = true;
+        this.box3Applied = cell;
+        this.render();
+        this._applyBudget(cell);
+        setTimeout(() => { this._enterCentral(); }, 900);
+      } else {
+        this.render();
+      }
+      return;
+    }
+  }
+
+  _enterCentral() {
+    this.totalBudget = this.scratchBudget;
+    this._placePickle();
+    this.phase = 4;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.scratchBudget);
+    this.render();
+  }
+
+  _tapCentral(px, py) {
+    if (this.won) return;
+    const key = this._cellAt(px, py);
+    if (!key || this.centralRevealed.has(key)) return;
+
+    this.centralRevealed.add(key);
+
+    if (this.freePlay) {
+      // Free play: no scoring, just reveal
+      if (key === this.pickleKey) {
+        this.won = true;
+        this.animating = true;
+        this._startSlot(null); // no onWin — no score
+      } else {
+        this.render();
+      }
+      return;
+    }
+
+    this.scratchBudget--;
+    if (this.onScoreUpdate) this.onScoreUpdate(this.scratchBudget);
+
+    if (key === this.pickleKey) {
+      this.won = true;
+      this.animating = true;
+      this.render();
+      this._startSlot(() => {
+        if (this.onWin) this.onWin(this.scratchBudget);
+      });
+    } else if (this.scratchBudget <= 0) {
+      this.freePlay = true;
+      if (this.onControlsChange) this.onControlsChange();
+      this.render();
+    } else {
+      this.render();
+    }
+  }
+
+  _cellAt(px, py) {
+    const { cs, ox, oy } = this;
+    if (!cs) return null;
+    const c = Math.floor((px - ox) / cs);
+    const r = Math.floor((py - oy) / cs);
+    const key = `${r},${c}`;
+    return this.treeCells.has(key) ? key : null;
+  }
+
+  // ---- Controls bar ----
+
+  renderCustomControls(bar) {
+    bar.innerHTML = '';
+    bar.style.cssText = 'display:flex;gap:8px;padding:8px 12px;align-items:center;justify-content:center';
+    const btn = document.createElement('button');
+    btn.className = 'ctrl-btn';
+    btn.textContent = '🔀 New Game';
+    btn.addEventListener('click', () => {
+      const proto = PROTOTYPES.find(p => p.id === 'scratcher');
+      if (proto) startGame(proto, (Date.now() ^ 0xF00DCAFE) >>> 0);
+    });
+    bar.appendChild(btn);
+    if (this.freePlay && !this.won) {
+      const info = document.createElement('span');
+      info.style.cssText = 'color:#7aaa5a;font-size:0.8rem';
+      info.textContent = 'See you tomorrow! 🎄';
+      bar.appendChild(info);
     }
   }
 }
