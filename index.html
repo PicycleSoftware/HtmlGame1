@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.24</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.25</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -5363,14 +5363,15 @@ class LotteryScatcherGame {
     this.box2FlipAll = false;
 
     // ---- Box 3: optional modifier ----
-    // 4×4 = 16 cells: 68.75% positive (11), 18.75% coal (3), 12.5% negative (2)
-    // Multiple of each type — first non-coal found is kept.
-    // Distribution: 4×(1.5x), 4×(2x), 3×(3x), 3×coal, 2×(0.5x)
+    // 4×4 = 16 cells: 43.75% positive (7), 31.25% negative 0.5x (5), 25% coal (4)
+    // Non-coal ratio 7:5 ≈ 3:2 good:bad. ~36% fewer prize tiles than prior version.
+    // Distribution: 3×(1.5x), 2×(2x), 2×(3x), 4×coal, 5×(0.5x)
     this.box3Cells    = this._shuffle(
-      ['0.5x','0.5x','coal','coal','coal',
-       '1.5x','1.5x','1.5x','1.5x',
-       '2x','2x','2x','2x',
-       '3x','3x','3x'], rng);
+      ['0.5x','0.5x','0.5x','0.5x','0.5x',
+       'coal','coal','coal','coal',
+       '1.5x','1.5x','1.5x',
+       '2x','2x',
+       '3x','3x'], rng);
     this.box3Revealed = new Array(16).fill(false);
     this.box3Done    = false;
     this.box3Skipped = false;
@@ -5384,6 +5385,11 @@ class LotteryScatcherGame {
     // ---- Scratch budget ----
     this.scratchBudget = 0;
     this.totalBudget   = 0; // locked at phase-4 entry
+
+    // ---- Ornaments (placed in _enterCentral) ----
+    this.ornamentCells = new Set();
+    this.ornamentEmoji = {};
+    this.slotCount     = 0; // escalating slot duration tracker
 
     // ---- Tree (rows 0–6, 37 cells) ----
     this.COLS = 9;
@@ -5546,7 +5552,7 @@ class LotteryScatcherGame {
         ctx.fillStyle = '#ffd700';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
-        ctx.fillText('Tap anywhere to continue ▶', W / 2, H - 10);
+        ctx.fillText('Tap anywhere to continue ▶', W / 2, H * 0.82);
         ctx.restore();
         requestAnimationFrame(() => { if (this.flipWaitingTap) this.render(); });
       }
@@ -5768,23 +5774,38 @@ class LotteryScatcherGame {
 
   _renderBox3Prompt(boxTop, boxH) {
     const { ctx, W } = this;
+
+    // Title
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = '#ffd700';
-    ctx.fillText('Box 3 — Optional', W / 2, boxTop + 2);
-    ctx.font = '13px sans-serif'; ctx.fillStyle = '#a8d08d';
-    ctx.fillText('Feeling Lucky? 🎰', W / 2, boxTop + 22);
+    ctx.fillText('Box 3 — Optional', W / 2, boxTop + 4);
+    ctx.font = '11px sans-serif'; ctx.fillStyle = '#a8d08d';
+    ctx.fillText(`You've earned ${this.scratchBudget} scratches. Risk it for a modifier?`, W / 2, boxTop + 22);
 
-    const lines = [
-      'Scratch to reveal a mystery modifier.',
-      "Could multiply your scratches… or cut them.",
-      `You've earned ${this.scratchBudget} scratches so far.`,
-    ];
-    ctx.font = '11px sans-serif'; ctx.fillStyle = '#90b870';
-    lines.forEach((l, i) => ctx.fillText(l, W / 2, boxTop + 48 + i * 17));
+    // Greyed-out grid preview (upper ~58% of box area)
+    const gridBoxH = Math.floor(boxH * 0.58);
+    const rects = this._gridLayout(4, 16, Math.min(W - 24, 300), 48, boxTop, gridBoxH, 42);
+    for (let i = 0; i < 16; i++) {
+      const rc = rects[i];
+      this._drawCell(rc.x, rc.y, rc.w, rc.h, false, this.box3Cells[i], 'modifier', false);
+    }
+    // Dark veil + label
+    const fr = rects[0], lr = rects[15];
+    const gx = fr.x - 4, gy = fr.y - 4;
+    const gw = (lr.x + lr.w + 4) - gx, gh = (lr.y + lr.h + 4) - gy;
+    ctx.save();
+    ctx.globalAlpha = 0.62;
+    ctx.fillStyle = '#000814';
+    ctx.fillRect(gx, gy, gw, gh);
+    ctx.restore();
+    ctx.font = '11px sans-serif'; ctx.fillStyle = 'rgba(180,220,140,0.75)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('Choose below to reveal ↓', W / 2, gy + gh / 2);
 
+    // Buttons (lower portion)
     const btnW = Math.min(138, (W - 44) / 2);
     const btnH = 50;
-    const btnY = boxTop + boxH * 0.50;
+    const btnY = boxTop + boxH * 0.76;
     const skipX = W / 2 - btnW - 8;
     const playX = W / 2 + 8;
 
@@ -5880,8 +5901,15 @@ class LotteryScatcherGame {
         ctx.font = `${Math.floor(cs * 0.54)}px serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('🥒', x + cs / 2, y + cs / 2);
+      } else if (this.ornamentCells.has(key)) {
+        // Revealed ornament cell
+        ctx.fillStyle = '#1e2a10'; ctx.fill();
+        ctx.strokeStyle = '#5a8e30'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.font = `${Math.floor(cs * 0.52)}px serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(this.ornamentEmoji[key], x + cs / 2, y + cs / 2);
       } else {
-        // Revealed ornament
+        // Revealed empty cell
         ctx.fillStyle = this._cellColor[key]; ctx.fill();
         roundRect(ctx, x + 2, y + 2, cs - 4, cs - 4, 6);
         ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fill();
@@ -5900,8 +5928,11 @@ class LotteryScatcherGame {
 
   // ---- Slot machine (pickle reveal) ----
 
-  _startSlot(onDone) {
-    this.slotAnim = { startMs: Date.now(), totalMs: 1400, onDone };
+  _startSlot(landEmoji, onDone) {
+    // Duration escalates with each reveal: 900 → 1250 → 1600 → ... capped at 2600ms
+    const totalMs = Math.min(2600, 900 + this.slotCount * 350);
+    this.slotCount++;
+    this.slotAnim = { startMs: Date.now(), totalMs, landEmoji: landEmoji || '🥒', onDone };
     const tick = () => {
       if (!this.slotAnim) return;
       this.render();
@@ -5954,7 +5985,7 @@ class LotteryScatcherGame {
       ctx.scale(sc, sc);
       ctx.font = `${Math.floor(winH * 0.46)}px serif`;
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('🥒', 0, 0);
+      ctx.fillText(sa.landEmoji, 0, 0);
       ctx.restore();
       if (t2 > 350) {
         ctx.font = `${Math.max(9, Math.floor(winH * 0.15))}px sans-serif`;
@@ -6095,6 +6126,24 @@ class LotteryScatcherGame {
   _enterCentral() {
     this.totalBudget = this.scratchBudget;
     this._placePickle();
+
+    // Place ornaments on ~22% of non-pickle cells (seeded, consistent per day)
+    const oRng = makePRNG(this.seed ^ 0xBADCAFE5);
+    const ORNAMENT_EMOJIS = ['🎄','🔔','🎁','🌟'];
+    const candidates = this.pickable.filter(k => k !== this.pickleKey);
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(oRng() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+    const ornamentCount = Math.round(this.pickable.length * 0.22); // ~8 of 36
+    this.ornamentCells = new Set();
+    this.ornamentEmoji = {};
+    for (let i = 0; i < ornamentCount; i++) {
+      const k = candidates[i];
+      this.ornamentCells.add(k);
+      this.ornamentEmoji[k] = ORNAMENT_EMOJIS[Math.floor(oRng() * ORNAMENT_EMOJIS.length)];
+    }
+
     this.phase = 4;
     if (this.onScoreUpdate) this.onScoreUpdate(this.scratchBudget);
     this.render();
@@ -6105,15 +6154,20 @@ class LotteryScatcherGame {
     const key = this._cellAt(px, py);
     if (!key || this.centralRevealed.has(key)) return;
 
-    this.centralRevealed.add(key);
-
     if (this.freePlay) {
-      // Free play: no scoring, just reveal
       if (key === this.pickleKey) {
+        this.centralRevealed.add(key);
         this.won = true;
         this.animating = true;
-        this._startSlot(null); // no onWin — no score
+        this._startSlot('🥒', null);
+      } else if (this.ornamentCells.has(key)) {
+        this.animating = true;
+        this._startSlot(this.ornamentEmoji[key], () => {
+          this.centralRevealed.add(key);
+          this.render();
+        });
       } else {
+        this.centralRevealed.add(key);
         this.render();
       }
       return;
@@ -6123,17 +6177,30 @@ class LotteryScatcherGame {
     if (this.onScoreUpdate) this.onScoreUpdate(this.scratchBudget);
 
     if (key === this.pickleKey) {
+      this.centralRevealed.add(key);
       this.won = true;
       this.animating = true;
       this.render();
-      this._startSlot(() => {
+      this._startSlot('🥒', () => {
         if (this.onWin) this.onWin(this.scratchBudget);
       });
-    } else if (this.scratchBudget <= 0) {
-      this.freePlay = true;
-      if (this.onControlsChange) this.onControlsChange();
-      this.render();
+    } else if (this.ornamentCells.has(key)) {
+      // Ornament: slot machine reveals which ornament, THEN adds to centralRevealed
+      this.animating = true;
+      this._startSlot(this.ornamentEmoji[key], () => {
+        this.centralRevealed.add(key);
+        if (this.scratchBudget <= 0) {
+          this.freePlay = true;
+          if (this.onControlsChange) this.onControlsChange();
+        }
+        this.render();
+      });
     } else {
+      this.centralRevealed.add(key);
+      if (this.scratchBudget <= 0) {
+        this.freePlay = true;
+        if (this.onControlsChange) this.onControlsChange();
+      }
       this.render();
     }
   }
