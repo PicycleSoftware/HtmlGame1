@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.23</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.24</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -5407,6 +5407,9 @@ class LotteryScatcherGame {
     // 0=box1  1=box2  2=box3-prompt  3=box3-scratch  4=central
     this.phase = 0;
 
+    // ---- Flip-wait state (tap anywhere to advance after box flip reveal) ----
+    this.flipWaitingTap = false;
+
     // ---- Animations ----
     this.slotAnim    = null;
     this.counterAnim = null; // { from, to, label, size, startMs, durMs }
@@ -5535,6 +5538,18 @@ class LotteryScatcherGame {
       else if (this.phase === 1) this._renderBox2(boxTop, boxH);
       else if (this.phase === 2) this._renderBox3Prompt(boxTop, boxH);
       else                       this._renderBox3Scratch(boxTop, boxH);
+      if (this.flipWaitingTap) {
+        const pulse = 0.78 + 0.22 * Math.sin(Date.now() / 280);
+        ctx.save();
+        ctx.globalAlpha = pulse;
+        ctx.font = 'bold 15px sans-serif';
+        ctx.fillStyle = '#ffd700';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText('Tap anywhere to continue ▶', W / 2, H - 10);
+        ctx.restore();
+        requestAnimationFrame(() => { if (this.flipWaitingTap) this.render(); });
+      }
     } else {
       this._renderCentral();
       if (this.slotAnim) this._drawSlot();
@@ -5976,11 +5991,24 @@ class LotteryScatcherGame {
       return;
     }
 
+    // Tap-to-proceed after box flip reveal
+    if (this.flipWaitingTap) {
+      this.flipWaitingTap = false;
+      this._advanceFromFlip();
+      return;
+    }
+
     if (this.phase === 0)      this._tapBox1(px, py);
     else if (this.phase === 1) this._tapBox2(px, py);
     else if (this.phase === 2) this._tapBox3Prompt(px, py);
     else if (this.phase === 3) this._tapBox3Scratch(px, py);
     else                       this._tapCentral(px, py);
+  }
+
+  _advanceFromFlip() {
+    if (this.phase === 0) { this.phase = 1; this.render(); }
+    else if (this.phase === 1) { this.phase = 2; this.render(); }
+    else if (this.phase === 3) { this._enterCentral(); }
   }
 
   _tapBox1(px, py) {
@@ -5997,8 +6025,8 @@ class LotteryScatcherGame {
       this._applyBudget(`+${v}`);
       if (this.box1PicksLeft === 0) {
         this.box1FlipAll = true;
+        this.flipWaitingTap = true;
         this.render();
-        setTimeout(() => { this.phase = 1; this.render(); }, 1300);
       } else {
         this.render();
       }
@@ -6019,9 +6047,9 @@ class LotteryScatcherGame {
         this.box2Done  = true;
         this.box2Prize = cell;
         this.box2FlipAll = true;
-        this.render();
         this._applyBudget(cell);
-        setTimeout(() => { this.phase = 2; this.render(); }, 1300);
+        this.flipWaitingTap = true;
+        this.render();
       } else {
         this.render();
       }
@@ -6054,9 +6082,9 @@ class LotteryScatcherGame {
         this.box3Done    = true;
         this.box3Applied = cell;
         this.box3FlipAll = true;
-        this.render();
         this._applyBudget(cell);
-        setTimeout(() => { this._enterCentral(); }, 1300);
+        this.flipWaitingTap = true;
+        this.render();
       } else {
         this.render();
       }
