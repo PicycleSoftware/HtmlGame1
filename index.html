@@ -265,7 +265,7 @@
 <!-- ===== LAUNCHER ===== -->
 <div id="screen-launcher">
   <div class="launcher-header">
-    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.25</span></h1>
+    <h1>🥒 Christmas Pickle <span style="font-size:0.45em;opacity:0.45;font-weight:400;letter-spacing:0">v0.26</span></h1>
     <div class="date" id="today-date-label"></div>
     <div class="tagline">Daily puzzles · Compare scores with family</div>
   </div>
@@ -5340,8 +5340,8 @@ class LotteryScatcherGame {
     const rng = makePRNG(this.seed);
 
     // ---- Box 1: pick 5 of 9, all winners ----
-    // Distribution: 1×(+1), 6×(+2), 2×(+3) → min 9, max 12, avg ~10.6
-    this.box1Values = this._shuffle([1,2,2,2,2,2,2,3,3], rng);
+    // Distribution: 2×(+1), 5×(+2), 2×(+3) → min 8, max 12, avg ~10.3
+    this.box1Values = this._shuffle([1,1,2,2,2,2,2,3,3], rng);
     this.box1Revealed = new Array(9).fill(false);
     this.box1PicksLeft = 5;
     this.box1Total = 0;
@@ -5387,9 +5387,10 @@ class LotteryScatcherGame {
     this.totalBudget   = 0; // locked at phase-4 entry
 
     // ---- Ornaments (placed in _enterCentral) ----
-    this.ornamentCells = new Set();
-    this.ornamentEmoji = {};
-    this.slotCount     = 0; // escalating slot duration tracker
+    this.ornamentCells    = new Set();
+    this.ornamentEmoji    = {};
+    this.slotCount        = 0;    // escalating slot duration tracker
+    this.pendingRevealKey = null; // cell being revealed by slot machine (shows "?")
 
     // ---- Tree (rows 0–6, 37 cells) ----
     this.COLS = 9;
@@ -5885,6 +5886,14 @@ class LotteryScatcherGame {
         ctx.font = `${Math.floor(cs * 0.54)}px serif`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         ctx.fillText('⭐', x + cs / 2, y + cs / 2);
+      } else if (key === this.pendingRevealKey) {
+        // Being revealed by slot machine — show "?" so nothing leaks before the reveal
+        ctx.fillStyle = '#2a3e18'; ctx.fill();
+        ctx.strokeStyle = '#ffd700'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.font = `bold ${Math.floor(cs * 0.44)}px sans-serif`;
+        ctx.fillStyle = 'rgba(255,215,0,0.55)';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('?', x + cs / 2, y + cs / 2);
       } else if (!revealed) {
         ctx.fillStyle = '#2e5018'; ctx.fill();
         ctx.strokeStyle = '#6aab3e'; ctx.lineWidth = 1.5; ctx.stroke();
@@ -6156,13 +6165,19 @@ class LotteryScatcherGame {
 
     if (this.freePlay) {
       if (key === this.pickleKey) {
-        this.centralRevealed.add(key);
         this.won = true;
         this.animating = true;
-        this._startSlot('🥒', null);
+        this.pendingRevealKey = key;
+        this._startSlot('🥒', () => {
+          this.pendingRevealKey = null;
+          this.centralRevealed.add(key);
+          this.render();
+        });
       } else if (this.ornamentCells.has(key)) {
         this.animating = true;
+        this.pendingRevealKey = key;
         this._startSlot(this.ornamentEmoji[key], () => {
+          this.pendingRevealKey = null;
           this.centralRevealed.add(key);
           this.render();
         });
@@ -6177,17 +6192,20 @@ class LotteryScatcherGame {
     if (this.onScoreUpdate) this.onScoreUpdate(this.scratchBudget);
 
     if (key === this.pickleKey) {
-      this.centralRevealed.add(key);
       this.won = true;
       this.animating = true;
-      this.render();
+      this.pendingRevealKey = key;
       this._startSlot('🥒', () => {
+        this.pendingRevealKey = null;
+        this.centralRevealed.add(key);
+        this.render();
         if (this.onWin) this.onWin(this.scratchBudget);
       });
     } else if (this.ornamentCells.has(key)) {
-      // Ornament: slot machine reveals which ornament, THEN adds to centralRevealed
       this.animating = true;
+      this.pendingRevealKey = key;
       this._startSlot(this.ornamentEmoji[key], () => {
+        this.pendingRevealKey = null;
         this.centralRevealed.add(key);
         if (this.scratchBudget <= 0) {
           this.freePlay = true;
